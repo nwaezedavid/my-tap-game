@@ -94,27 +94,37 @@ function createFloatingText(x, y, text) {
 }
 
 // Monetag Ad Integration Logic
+// Replace 8123456 with your actual Monetag Main Zone ID
+const MONETAG_ZONE_ID = "12184150";
+
 els.rechargeBtn.addEventListener('click', () => {
-    // Check if Monetag Rewarded Ad SDK is ready
-    if (typeof showMonetagRewardedAd === 'function') {
-        showMonetagRewardedAd()
-            .then(() => {
-                // Ad completed successfully - Execute Reward Callback
-                tg.HapticFeedback.notificationOccurred('success');
-                state.energy = state.maxEnergy;
-                state.balance += 500; // Bonus reward
-                updateUI();
-                tg.showAlert("Energy restored and 500 bonus coins awarded!");
+    const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
+
+    // 1. Check if Monetag SDK is loaded
+    if (typeof window[sdkFuncName] === 'function') {
+
+        // 2. Trigger Rewarded Interstitial
+        window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
+            .then((result) => {
+                // 3. Verify user watched the complete ad
+                if (result && result.reward_event_type === 'valued') {
+                    state.energy = state.maxEnergy; // Refill 100%
+                    state.balance += 500;           // Add bonus coins
+                    updateUI();
+
+                    tg.HapticFeedback.notificationOccurred('success');
+                    tg.showAlert("⚡ Energy fully restored + 500 bonus coins!");
+                } else {
+                    tg.showAlert("Ad closed early! Watch the complete ad to get rewarded.");
+                }
             })
             .catch((error) => {
-                console.error("Ad not completed or failed:", error);
-                tg.showAlert("Ad was closed early. No reward granted.");
+                console.error("Ad failed or rejected:", error);
+                tg.showAlert("Ad currently unavailable. Please try again shortly.");
             });
+
     } else {
-        // Fallback for development/testing if SDK fails to load
-        console.warn("Monetag SDK missing. Simulating reward.");
-        state.energy = state.maxEnergy;
-        updateUI();
+        tg.showAlert("Ad system is initializing. Please try again in a few seconds.");
     }
 });
 
