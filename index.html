@@ -88,10 +88,19 @@
         </button>
     </main>
 
+    <!-- Leaderboard View (Hidden by default) -->
+    <main id="leaderboardView" class="flex-1 hidden flex-col p-6 overflow-y-auto">
+        <h2 class="text-2xl font-bold mb-4 text-accentGold text-center">Top 50 Players</h2>
+        <div id="leaderboardList" class="flex flex-col gap-3 pb-20">
+            <div class="text-center text-gray-400 mt-10 animate-pulse">Loading ranks...</div>
+        </div>
+    </main>
+
     <!-- Bottom Navigation -->
     <nav class="flex bg-white/5 border-t border-white/10 pb-safe">
         <button id="navGame" class="flex-1 py-4 tab-active font-semibold">Game</button>
         <button id="navFriends" class="flex-1 py-4 text-gray-400 font-semibold">Friends</button>
+        <button id="navLeaderboard" class="flex-1 py-4 text-gray-400 font-semibold">Rank</button>
     </nav>
 
     <script src="app.js"></script>
