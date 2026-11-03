@@ -151,6 +151,8 @@ els.rechargeBtn.addEventListener('click', () => {
                     state.balance += 500;           // Add bonus coins
                     updateUI();
 
+                    saveProgress();
+
                     tg.HapticFeedback.notificationOccurred('success');
                     tg.showAlert("⚡ Energy fully restored + 500 bonus coins!");
                 } else {
