@@ -1,3 +1,8 @@
+// Put this at the very top of your file
+const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
+const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
 const tg = window.Telegram.WebApp;
 tg.expand();
 
