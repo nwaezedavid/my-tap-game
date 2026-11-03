@@ -36,17 +36,36 @@ const els = {
 };
 
 // Initialization
-function init() {
+async function init() {
     const user = tg.initDataUnsafe?.user;
     if (user) {
         state.userId = user.id;
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
+
+        // 1. Ask Supabase for this player's data
+        const { data, error } = await db
+            .from('users')
+            .select('*')
+            .eq('telegram_id', state.userId)
+            .single();
+
+        if (data) {
+            // Player found! Load their saved coins and energy
+            state.balance = data.balance;
+            state.energy = data.energy;
+        } else {
+            // New player! Add them to the database for the first time
+            await db.from('users').insert([{
+                telegram_id: state.userId,
+                username: user.username || user.first_name,
+                balance: 0,
+                energy: 1000
+            }]);
+        }
     } else {
         els.usernameDisplay.innerText = "Guest Player";
     }
-    
-    // In production, fetch state from backend here using tg.initData
     updateUI();
 }
 
