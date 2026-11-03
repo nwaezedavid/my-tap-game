@@ -69,7 +69,18 @@ async function init() {
     updateUI();
 }
 
+// Save Progress to Supabase
+async function saveProgress() {
+    if (!state.userId) return; // Don't save guest players
+    
+    await db.from('users')
+        .update({ balance: state.balance, energy: state.energy })
+        .eq('telegram_id', state.userId);
+}
+
 // Core Gameplay Loop
+let tapCount = 0;
+
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
         tg.HapticFeedback.impactOccurred('medium');
@@ -77,10 +88,14 @@ els.tapButton.addEventListener('click', (e) => {
         state.energy -= 1;
         updateUI();
         
-        // Float animation for coins
         createFloatingText(e.clientX, e.clientY, `+${1 * state.multiplier}`);
         
-        // Debounced sync to backend would go here
+        // Count taps and save to database every 10 taps
+        tapCount++;
+        if (tapCount >= 10) {
+            saveProgress();
+            tapCount = 0; // Reset counter back to zero
+        }
     }
 });
 
