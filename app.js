@@ -33,6 +33,9 @@ const els = {
     navFriends: document.getElementById('navFriends'),
     referralCount: document.getElementById('referralCount'),
     referralBar: document.getElementById('referralBar')
+    navLeaderboard: document.getElementById('navLeaderboard'),
+    leaderboardView: document.getElementById('leaderboardView'),
+    leaderboardList: document.getElementById('leaderboardList')
 };
 
 // Initialization
@@ -195,25 +198,83 @@ els.inviteBtn.addEventListener('click', () => {
     tg.openTelegramLink(shareUrl);
 });
 
+// Fetch and render Leaderboard
+async function loadLeaderboard() {
+    els.leaderboardList.innerHTML = '<div class="text-center text-gray-400 mt-10 animate-pulse">Loading ranks...</div>';
+    
+    // Ask Supabase for the top 50 balances
+    const { data, error } = await db
+        .from('users')
+        .select('username, balance, telegram_id')
+        .order('balance', { ascending: false })
+        .limit(50);
+        
+    if (error) {
+        els.leaderboardList.innerHTML = '<div class="text-center text-red-500 mt-10">Failed to load leaderboard.</div>';
+        return;
+    }
+    
+    els.leaderboardList.innerHTML = ''; // Clear loading text
+    
+    // Loop through players and generate UI cards
+    data.forEach((player, index) => {
+        const isMe = player.telegram_id === state.userId;
+        const rank = index + 1;
+        
+        // Color coding for top 3
+        let rankColor = 'text-gray-400';
+        if (rank === 1) rankColor = 'text-yellow-400 font-black text-2xl drop-shadow-md'; 
+        else if (rank === 2) rankColor = 'text-gray-300 font-bold text-xl'; 
+        else if (rank === 3) rankColor = 'text-orange-400 font-bold text-xl'; 
+        
+        const item = document.createElement('div');
+        item.className = `flex justify-between items-center p-3 rounded-xl border ${isMe ? 'bg-white/10 border-accentGold shadow-[0_0_10px_rgba(255,215,0,0.2)]' : 'bg-white/5 border-white/10'}`;
+        
+        item.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="w-8 text-center ${rankColor}">#${rank}</div>
+                <div class="font-semibold ${isMe ? 'text-accentGold' : 'text-white'}">${player.username || 'Anonymous'}</div>
+            </div>
+            <div class="font-bold text-accentNeon">${player.balance.toLocaleString()}</div>
+        `;
+        els.leaderboardList.appendChild(item);
+    });
+}
+
 // Navigation
 els.navGame.addEventListener('click', () => switchTab('game'));
 els.navFriends.addEventListener('click', () => switchTab('friends'));
+els.navLeaderboard.addEventListener('click', () => {
+    switchTab('leaderboard');
+    loadLeaderboard(); // Fetch fresh data every time they click the tab
+});
 
 function switchTab(tab) {
+    // 1. Hide all views
+    els.gameView.classList.add('hidden');
+    els.friendsView.classList.add('hidden');
+    els.leaderboardView.classList.add('hidden');
+    
+    // 2. Reset all nav buttons to inactive
+    const navs = [els.navGame, els.navFriends, els.navLeaderboard];
+    navs.forEach(nav => {
+        nav.classList.remove('tab-active', 'text-accentGold');
+        nav.classList.add('text-gray-400');
+    });
+
+    // 3. Show active view and highlight button
     if (tab === 'game') {
         els.gameView.classList.remove('hidden');
-        els.friendsView.classList.add('hidden');
         els.navGame.classList.add('tab-active', 'text-accentGold');
         els.navGame.classList.remove('text-gray-400');
-        els.navFriends.classList.remove('tab-active', 'text-accentGold');
-        els.navFriends.classList.add('text-gray-400');
-    } else {
-        els.gameView.classList.add('hidden');
+    } else if (tab === 'friends') {
         els.friendsView.classList.remove('hidden');
         els.navFriends.classList.add('tab-active', 'text-accentGold');
         els.navFriends.classList.remove('text-gray-400');
-        els.navGame.classList.remove('tab-active', 'text-accentGold');
-        els.navGame.classList.add('text-gray-400');
+    } else if (tab === 'leaderboard') {
+        els.leaderboardView.classList.remove('hidden');
+        els.navLeaderboard.classList.add('tab-active', 'text-accentGold');
+        els.navLeaderboard.classList.remove('text-gray-400');
     }
 }
 
