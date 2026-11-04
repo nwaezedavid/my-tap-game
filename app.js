@@ -100,28 +100,20 @@ async function init() {
     checkDailyStatus();
 }
 
-// --- SECURE SAVE PROGRESS ---
+// --- DIRECT DATABASE SAVING ---
 async function saveProgress() {
     if (!state.userId) return;
-    try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/verify-and-save`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${supabaseKey}`
-            },
-            body: JSON.stringify({
-                initData: tg.initData,
-                balance: state.balance,
-                energy: state.energy,
-                streak_count: state.streakCount,
-                last_checkin_date: state.lastCheckinDate,
-                wallet_address: state.wallet
-            })
-        });
-        if (!response.ok) console.error("Security sync failed");
-    } catch (err) {
-        console.error("Network error during secure save:", err);
+    const { error } = await db.from('users').upsert({
+        telegram_id: state.userId,
+        balance: state.balance,
+        energy: state.energy,
+        streak_count: state.streakCount,
+        last_checkin_date: state.lastCheckinDate,
+        wallet_address: state.wallet
+    }, { onConflict: 'telegram_id' });
+
+    if (error) {
+        console.error("Save failed:", error.message);
     }
 }
 
@@ -132,7 +124,6 @@ function updateUI() {
     els.mainBalance.innerText = formattedBal;
     els.walletBalance.innerText = formattedBal;
     
-    // 1,000,000 coins = $0.001 USD
     const usdConversion = (state.balance * 0.000000001).toFixed(6);
     els.usdValue.innerText = `≈ $${usdConversion} USD`;
     
@@ -185,7 +176,7 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
     
     updateUI();
     checkDailyStatus();
-    saveProgress();
+    saveProgress(); // Saves immediately
     
     tg.HapticFeedback.notificationOccurred('success');
     tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
@@ -224,34 +215,23 @@ els.tapButton.addEventListener('click', (e) => {
     }
 });
 
-// --- MONETAG S2S SECURE AD ENGINE ---
+// --- INSTANT AD REWARD ENGINE ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
-    
     if (typeof window[sdkFuncName] === 'function') {
-        tg.showConfirm(`Watch a short ad to earn ${rewardAmount.toLocaleString()} Coins?`, (confirmed) => {
+        tg.showConfirm(`Watch an ad to earn ${rewardAmount.toLocaleString()} Coins?`, (confirmed) => {
             if (confirmed) {
-                // Pass reward data through requestVar so Monetag S2S Webhook knows what to give
-                const taskString = `${rewardAmount}_${refillEnergy}`;
-
-                window[sdkFuncName]({ 
-                    ymid: String(state.userId || 'guest'),
-                    requestVar: taskString
-                })
+                window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
                 .then((result) => {
                     if (result && result.reward_event_type === 'valued') {
-                        // Phone DOES NOT add coins manually! 
-                        // Wait 2 seconds for Monetag S2S Webhook to credit DB, then fetch fresh balance.
-                        setTimeout(async () => {
-                            const { data } = await db.from('users').select('balance, energy').eq('telegram_id', state.userId).maybeSingle();
-                            if (data) {
-                                state.balance = Number(data.balance);
-                                state.energy = Number(data.energy);
-                                updateUI();
-                                tg.HapticFeedback.notificationOccurred('success');
-                                tg.showAlert(`🎉 Server verified your view and awarded ${rewardAmount.toLocaleString()} Coins!`);
-                            }
-                        }, 2000);
+                        // Instantly grant coins on screen
+                        state.balance += rewardAmount;
+                        if (refillEnergy) state.energy = state.maxEnergy;
+                        
+                        updateUI();
+                        saveProgress(); // Immediately save to database
+                        tg.HapticFeedback.notificationOccurred('success');
+                        tg.showAlert(`🎉 Ad completed! You earned ${rewardAmount.toLocaleString()} Coins!`);
                     } else {
                         tg.showAlert("Ad closed early. Watch completely to claim reward.");
                     }
@@ -267,21 +247,14 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
 function forceAutoAd() {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     if (typeof window[sdkFuncName] === 'function') {
-        window[sdkFuncName]({ 
-            ymid: String(state.userId || 'guest'),
-            requestVar: "250_false"
-        })
+        window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
         .then((result) => {
             if (result && result.reward_event_type === 'valued') {
-                setTimeout(async () => {
-                    const { data } = await db.from('users').select('balance, energy').eq('telegram_id', state.userId).maybeSingle();
-                    if (data) {
-                        state.balance = Number(data.balance);
-                        state.energy = Number(data.energy);
-                        updateUI();
-                        tg.showAlert("🎁 Surprise! Server added a 250 Coin bonus for your playtime!");
-                    }
-                }, 2000);
+                // Instantly grant surprise coins
+                state.balance += 250;
+                updateUI();
+                saveProgress();
+                tg.showAlert("🎁 Surprise! Server added a 250 Coin bonus for your playtime!");
             }
         })
         .catch(() => console.log("Auto ad skipped/busy."));
