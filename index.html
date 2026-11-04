@@ -5,18 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Viral Tap & Earn</title>
     
-    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { theme: { extend: { colors: { bgMain: '#0F172A', accentGold: '#F59E0B', accentNeon: '#38BDF8' } } } }</script>
     
-    <!-- Essential SDKs -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <!-- MONETAG SDK (Replace YOUR_ZONE_ID with your actual Rewarded Interstitial Zone ID) -->
+    <!-- SINGLE MONETAG SDK (Handles both Earn tab rewards & 100-tap auto-ads) -->
     <script src='//libtl.com/sdk.js' data-zone='12184150' data-sdk='show_12184150'></script>
     
-    <!-- TON CONNECT SDK -->
     <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
     
     <style>
@@ -65,7 +62,6 @@
     <main id="earnView" class="flex-1 hidden flex-col p-5 overflow-y-auto">
         <h2 class="text-3xl font-black mb-4 text-white">Earn More</h2>
         
-        <!-- Daily Check-in Card -->
         <div class="bg-gradient-to-r from-blue-600 to-indigo-900 p-4 rounded-2xl mb-6 shadow-lg border border-blue-400/30 flex justify-between items-center relative overflow-hidden">
             <div class="absolute -right-4 -top-4 text-6xl opacity-20">🎁</div>
             <div class="z-10">
@@ -121,17 +117,17 @@
             <div class="absolute top-0 right-0 w-32 h-32 bg-accentGold/10 rounded-full blur-3xl"></div>
             <p class="text-gray-400 font-bold mb-1">Available Balance</p>
             <h1 class="text-5xl font-black text-white" id="walletBalance">0</h1>
-            <p class="text-accentGold font-bold mt-2">≈ $0.00 USD</p>
+            
+            <p id="usdValue" class="text-accentGold font-bold mt-2">≈ $0.000000 USD</p>
         </div>
 
-        <!-- TON Connect Button -->
         <div id="ton-connect-button" class="flex justify-center w-full mt-2 mb-4"></div>
         <p id="walletAddressDisplay" class="text-accentNeon text-xs font-bold text-center break-all px-4 mb-4"></p>
         
-        <p class="text-gray-500 text-xs text-center mt-3 border-t border-white/10 pt-4">Withdrawals unlock at 1,000,000 Coins</p>
+        <p class="text-gray-500 text-xs text-center mt-3 border-t border-white/10 pt-4">Withdrawals unlock at $5.00 (5,000,000,000 Coins)</p>
     </main>
 
-    <!-- Bottom Navigation (5 Tabs) -->
+    <!-- Bottom Navigation -->
     <nav class="flex bg-gray-900/90 backdrop-blur-md border-t border-white/10 pb-safe pt-2 px-1 justify-around items-center h-20">
         <button onclick="switchTab('game')" id="navGame" class="flex flex-col items-center gap-1 flex-1 tab-active">
             <span class="text-2xl drop-shadow-md">🕹️</span><span class="text-[10px] font-bold uppercase">Tap</span>
@@ -150,6 +146,7 @@
         </button>
     </nav>
 
-    <script src="app.js?v=9"></script>
+    <!-- Cache buster updated to v11 -->
+    <script src="app.js?v=11"></script>
 </body>
 </html>
