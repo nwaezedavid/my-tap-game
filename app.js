@@ -6,9 +6,9 @@ tg.expand();
 // ==========================================
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const MONETAG_ZONE_ID = "12184150";
-const BOT_USERNAME = "mycointapbot"; // e.g. MyCoolTapGame_bot
-const EDGEONE_LIVE_URL = "https://cointapearner.edgeone.dev"; // Your live website link
+const MONETAG_ZONE_ID = "12184150"; // Rewarded Interstitial Zone
+const BOT_USERNAME = "mycointapbot"; 
+const EDGEONE_LIVE_URL = "https://cointapearner.edgeone.dev"; 
 // ==========================================
 
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
@@ -29,6 +29,7 @@ const els = {
     headerBalance: document.getElementById('headerBalance'),
     mainBalance: document.getElementById('mainBalance'),
     walletBalance: document.getElementById('walletBalance'),
+    usdValue: document.getElementById('usdValue'),
     walletAddressDisplay: document.getElementById('walletAddressDisplay'),
     tapButton: document.getElementById('tapButton'),
     energyText: document.getElementById('energyText'),
@@ -54,6 +55,7 @@ const els = {
 };
 
 const DAILY_BASE_REWARD = 500;
+let sessionTapCount = 0; // Tracks taps for the 100-tap auto-ad
 
 // --- INITIALIZATION ---
 async function init() {
@@ -98,10 +100,9 @@ async function init() {
     checkDailyStatus();
 }
 
-// --- SECURE SAVE PROGRESS VIA EDGE FUNCTION ---
+// --- SECURE SAVE PROGRESS ---
 async function saveProgress() {
     if (!state.userId) return;
-
     try {
         const response = await fetch(`${supabaseUrl}/functions/v1/verify-and-save`, {
             method: 'POST',
@@ -110,7 +111,7 @@ async function saveProgress() {
                 'Authorization': `Bearer ${supabaseKey}`
             },
             body: JSON.stringify({
-                initData: tg.initData, // Cryptographic token verified securely on the server
+                initData: tg.initData,
                 balance: state.balance,
                 energy: state.energy,
                 streak_count: state.streakCount,
@@ -118,21 +119,22 @@ async function saveProgress() {
                 wallet_address: state.wallet
             })
         });
-
-        const result = await response.json();
-        if (!response.ok) {
-            console.error("Security sync failed:", result.error);
-        }
+        if (!response.ok) console.error("Security sync failed");
     } catch (err) {
         console.error("Network error during secure save:", err);
     }
 }
 
+// --- UI AND EXCHANGE RATE CALCULATOR ---
 function updateUI() {
     const formattedBal = state.balance.toLocaleString();
     els.headerBalance.innerText = formattedBal;
     els.mainBalance.innerText = formattedBal;
     els.walletBalance.innerText = formattedBal;
+    
+    // 1,000,000 coins = $0.001 USD. (Therefore 1 coin = $0.000000001)
+    const usdConversion = (state.balance * 0.000000001).toFixed(6);
+    els.usdValue.innerText = `≈ $${usdConversion} USD`;
     
     els.energyText.innerText = `${state.energy} / ${state.maxEnergy}`;
     els.energyBar.style.width = `${(state.energy / state.maxEnergy) * 100}%`;
@@ -189,15 +191,17 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
     tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
 });
 
-// --- CORE GAME LOGIC (TAP) ---
-let tapCount = 0;
+// --- CORE GAME LOGIC & 100-TAP AUTO AD ---
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
         tg.HapticFeedback.impactOccurred('medium');
         state.balance += 1;
         state.energy -= 1;
+        sessionTapCount++;
+        
         updateUI();
         
+        // Floating Text Animation
         const floatEl = document.createElement('div');
         floatEl.innerText = '+1';
         floatEl.className = 'absolute text-accentGold font-black text-3xl pointer-events-none transition-all duration-500 ease-out z-50 drop-shadow-md';
@@ -208,15 +212,23 @@ els.tapButton.addEventListener('click', (e) => {
         requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-60px)'; floatEl.style.opacity = '0'; });
         setTimeout(() => floatEl.remove(), 500);
         
-        tapCount++;
-        if (tapCount >= 10) { saveProgress(); tapCount = 0; }
+        // Save to Database every 10 taps
+        if (sessionTapCount % 10 === 0) { 
+            saveProgress(); 
+        }
+
+        // Force Auto-Ad every 100 taps
+        if (sessionTapCount % 100 === 0) {
+            forceAutoAd();
+        }
+
     } else {
         tg.HapticFeedback.notificationOccurred('warning');
         tg.showAlert("Energy depleted! Go to the Earn tab to watch an ad and refill instantly.");
     }
 });
 
-// --- MONETAG ADS ---
+// --- MONETAG ADS (Tasks & Auto) ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     
@@ -237,13 +249,31 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
                             tg.showAlert("Ad closed early. Watch completely to claim reward.");
                         }
                     })
-                    .catch(() => tg.showAlert("Ad network busy. Please try again shortly."));
+                    .catch(() => console.error("Ad network busy."));
             }
         });
     } else {
         tg.showAlert("Ad engine initializing. Please wait a few seconds.");
     }
 };
+
+// New function that triggers the ad without asking permission
+function forceAutoAd() {
+    const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
+    if (typeof window[sdkFuncName] === 'function') {
+        window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
+            .then((result) => {
+                // Give them a small surprise reward for being forced to watch
+                if (result && result.reward_event_type === 'valued') {
+                    state.balance += 250; 
+                    updateUI();
+                    saveProgress();
+                    tg.showAlert("🎁 Surprise! You earned a 250 Coin bonus for your playtime!");
+                }
+            })
+            .catch(() => console.log("Auto ad failed to load, continuing game..."));
+    }
+}
 
 // --- REFERRALS ---
 els.inviteBtn.addEventListener('click', () => {
@@ -318,5 +348,4 @@ tonConnectUI.onStatusChange(async (walletInfo) => {
     }
 });
 
-// Start App
 init();
