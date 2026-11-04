@@ -6,20 +6,11 @@
     <title>Tap to Earn TMA</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: { bgMain: '#1A1A2E', accentGold: '#FFD700', accentNeon: '#00F0FF' }
-                }
-            }
-        }
-    </script>
-    <!-- Telegram WebApp SDK -->
+    <script>tailwind.config = { theme: { extend: { colors: { bgMain: '#1A1A2E', accentGold: '#FFD700', accentNeon: '#00F0FF' } } } }</script>
+    <!-- Telegram & Supabase SDKs -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <!-- Add this Supabase SDK line exactly like this: -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-    <!-- Monetag SDK (Placeholder URL, replace with actual zone script) -->
+    <!-- Monetag SDK -->
     <script src='//libtl.com/sdk.js' data-zone='12184150' data-sdk='show_12184150'></script>
     
     <style>
@@ -64,14 +55,14 @@
         </div>
 
         <button id="rechargeBtn" class="mt-6 hidden w-full max-w-xs py-3 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 font-bold text-white shadow-lg animate-pulse">
-            ⚡ Watch Ad to Recharge (100% + Bonus)
+            ⚡ Watch Ad to Recharge
         </button>
     </main>
 
-    <!-- Referral / Friends View (Hidden by default) -->
+    <!-- Referral / Friends View -->
     <main id="friendsView" class="flex-1 hidden flex-col p-6 overflow-y-auto">
         <h2 class="text-2xl font-bold mb-4 text-accentGold">Invite Friends</h2>
-        <p class="text-gray-400 text-sm mb-6">Invite 3 friends to unlock perpetual 2x tap multiplier and withdrawal access.</p>
+        <p class="text-gray-400 text-sm mb-6">Invite 3 friends to unlock perpetual 2x tap multiplier.</p>
         
         <div class="bg-white/5 rounded-xl p-4 mb-6 border border-white/10">
             <div class="flex justify-between items-center mb-2">
@@ -88,12 +79,10 @@
         </button>
     </main>
 
-    <!-- Leaderboard View (Hidden by default) -->
+    <!-- Leaderboard View -->
     <main id="leaderboardView" class="flex-1 hidden flex-col p-6 overflow-y-auto">
         <h2 class="text-2xl font-bold mb-4 text-accentGold text-center">Top 50 Players</h2>
-        <div id="leaderboardList" class="flex flex-col gap-3 pb-20">
-            <div class="text-center text-gray-400 mt-10 animate-pulse">Loading ranks...</div>
-        </div>
+        <div id="leaderboardList" class="flex flex-col gap-3 pb-20"></div>
     </main>
 
     <!-- Bottom Navigation -->
@@ -103,6 +92,6 @@
         <button id="navLeaderboard" class="flex-1 py-4 text-gray-400 font-semibold">Rank</button>
     </nav>
 
-    <script src="app.js?v=2"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>
