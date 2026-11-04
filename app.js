@@ -1,23 +1,16 @@
-// Put this at the very top of your file
-const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
-const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const db = window.supabase.createClient(supabaseUrl, supabaseKey);
-
 const tg = window.Telegram.WebApp;
 tg.expand();
 
-// Game State
-let state = {
-    balance: 0,
-    energy: 1000,
-    maxEnergy: 1000,
-    referrals: 0,
-    multiplier: 1,
-    userId: null,
-    botUsername: 'YourBotUsername' // Replace with your actual bot username
-};
+// --- REPLACE THESE 3 LINES WITH YOUR ACTUAL KEYS ---
+const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
+const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
+const MONETAG_ZONE_ID = "12184150";
+// ---------------------------------------------------
 
-// DOM Elements
+const db = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+let state = { balance: 0, energy: 1000, maxEnergy: 1000, referrals: 0, multiplier: 1, userId: null, botUsername: '@mycointapbot' };
+
 const els = {
     usernameDisplay: document.getElementById('usernameDisplay'),
     avatar: document.getElementById('avatar'),
@@ -29,16 +22,15 @@ const els = {
     inviteBtn: document.getElementById('inviteBtn'),
     gameView: document.getElementById('gameView'),
     friendsView: document.getElementById('friendsView'),
+    leaderboardView: document.getElementById('leaderboardView'),
+    leaderboardList: document.getElementById('leaderboardList'),
     navGame: document.getElementById('navGame'),
     navFriends: document.getElementById('navFriends'),
+    navLeaderboard: document.getElementById('navLeaderboard'),
     referralCount: document.getElementById('referralCount'),
     referralBar: document.getElementById('referralBar')
-    navLeaderboard: document.getElementById('navLeaderboard'),
-    leaderboardView: document.getElementById('leaderboardView'),
-    leaderboardList: document.getElementById('leaderboardList')
 };
 
-// Initialization
 async function init() {
     const user = tg.initDataUnsafe?.user;
     if (user) {
@@ -46,19 +38,12 @@ async function init() {
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        // 1. Ask Supabase for this player's data
-        const { data, error } = await db
-            .from('users')
-            .select('*')
-            .eq('telegram_id', state.userId)
-            .single();
+        const { data } = await db.from('users').select('*').eq('telegram_id', state.userId).single();
 
         if (data) {
-            // Player found! Load their saved coins and energy
             state.balance = data.balance;
             state.energy = data.energy;
         } else {
-            // New player! Add them to the database for the first time
             await db.from('users').insert([{
                 telegram_id: state.userId,
                 username: user.username || user.first_name,
@@ -72,35 +57,10 @@ async function init() {
     updateUI();
 }
 
-// Save Progress to Supabase
 async function saveProgress() {
-    if (!state.userId) return; // Don't save guest players
-    
-    await db.from('users')
-        .update({ balance: state.balance, energy: state.energy })
-        .eq('telegram_id', state.userId);
+    if (!state.userId) return;
+    await db.from('users').update({ balance: state.balance, energy: state.energy }).eq('telegram_id', state.userId);
 }
-
-// Core Gameplay Loop
-let tapCount = 0;
-
-els.tapButton.addEventListener('click', (e) => {
-    if (state.energy > 0) {
-        tg.HapticFeedback.impactOccurred('medium');
-        state.balance += (1 * state.multiplier);
-        state.energy -= 1;
-        updateUI();
-        
-        createFloatingText(e.clientX, e.clientY, `+${1 * state.multiplier}`);
-        
-        // Count taps and save to database every 10 taps
-        tapCount++;
-        if (tapCount >= 10) {
-            saveProgress();
-            tapCount = 0; // Reset counter back to zero
-        }
-    }
-});
 
 function updateUI() {
     els.balance.innerText = state.balance.toLocaleString();
@@ -114,10 +74,6 @@ function updateUI() {
         els.tapButton.style.opacity = '1';
         els.rechargeBtn.classList.add('hidden');
     }
-
-    // Referral UI
-    els.referralCount.innerText = `${state.referrals} / 3`;
-    els.referralBar.style.width = `${Math.min((state.referrals / 3) * 100, 100)}%`;
 }
 
 function createFloatingText(x, y, text) {
@@ -128,100 +84,68 @@ function createFloatingText(x, y, text) {
     floatEl.style.top = `${y - 20}px`;
     document.body.appendChild(floatEl);
 
-    requestAnimationFrame(() => {
-        floatEl.style.transform = 'translateY(-50px)';
-        floatEl.style.opacity = '0';
-    });
+    requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-50px)'; floatEl.style.opacity = '0'; });
     setTimeout(() => floatEl.remove(), 700);
 }
 
-// Monetag Ad Integration Logic
-// Replace 8123456 with your actual Monetag Main Zone ID
-const MONETAG_ZONE_ID = "12184150";
+let tapCount = 0;
+els.tapButton.addEventListener('click', (e) => {
+    if (state.energy > 0) {
+        tg.HapticFeedback.impactOccurred('medium');
+        state.balance += (1 * state.multiplier);
+        state.energy -= 1;
+        updateUI();
+        createFloatingText(e.clientX, e.clientY, `+${1 * state.multiplier}`);
+        
+        tapCount++;
+        if (tapCount >= 10) {
+            saveProgress();
+            tapCount = 0;
+        }
+    }
+});
 
 els.rechargeBtn.addEventListener('click', () => {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
-
-    // 1. Check if Monetag SDK is loaded
     if (typeof window[sdkFuncName] === 'function') {
-
-        // 2. Trigger Rewarded Interstitial
         window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
             .then((result) => {
-                // 3. Verify user watched the complete ad
                 if (result && result.reward_event_type === 'valued') {
-                    state.energy = state.maxEnergy; // Refill 100%
-                    state.balance += 500;           // Add bonus coins
+                    state.energy = state.maxEnergy;
+                    state.balance += 500;
                     updateUI();
-
                     saveProgress();
-
                     tg.HapticFeedback.notificationOccurred('success');
                     tg.showAlert("⚡ Energy fully restored + 500 bonus coins!");
                 } else {
                     tg.showAlert("Ad closed early! Watch the complete ad to get rewarded.");
                 }
             })
-            .catch((error) => {
-                console.error("Ad failed or rejected:", error);
-                tg.showAlert("Ad currently unavailable. Please try again shortly.");
-            });
-
+            .catch(() => tg.showAlert("Ad currently unavailable."));
     } else {
         tg.showAlert("Ad system is initializing. Please try again in a few seconds.");
     }
 });
 
-// Monetag Wrapper Placeholder (Replace with actual Monetag API integration)
-function showMonetagRewardedAd() {
-    return new Promise((resolve, reject) => {
-        // Assuming Monetag exposes a global object, e.g., 'MonetagApp'
-        /* 
-        MonetagApp.showInterstitial({
-            onClose: () => reject('closed'),
-            onComplete: () => resolve()
-        }); 
-        */
-        // Simulated API call
-        setTimeout(() => resolve(), 2000); 
-    });
-}
-
-// Viral Loop & Referrals
 els.inviteBtn.addEventListener('click', () => {
     if (!state.userId) return;
     const inviteLink = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
-    const text = `Join me in this Tap-to-Earn game! We both get 1000 coins.`;
-    
-    // Use Telegram native share dialog
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(text)}`;
-    tg.openTelegramLink(shareUrl);
+    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me!`);
 });
 
-// Fetch and render Leaderboard
 async function loadLeaderboard() {
     els.leaderboardList.innerHTML = '<div class="text-center text-gray-400 mt-10 animate-pulse">Loading ranks...</div>';
+    const { data, error } = await db.from('users').select('username, balance, telegram_id').order('balance', { ascending: false }).limit(50);
     
-    // Ask Supabase for the top 50 balances
-    const { data, error } = await db
-        .from('users')
-        .select('username, balance, telegram_id')
-        .order('balance', { ascending: false })
-        .limit(50);
-        
     if (error) {
         els.leaderboardList.innerHTML = '<div class="text-center text-red-500 mt-10">Failed to load leaderboard.</div>';
         return;
     }
     
-    els.leaderboardList.innerHTML = ''; // Clear loading text
-    
-    // Loop through players and generate UI cards
+    els.leaderboardList.innerHTML = '';
     data.forEach((player, index) => {
         const isMe = player.telegram_id === state.userId;
         const rank = index + 1;
-        
-        // Color coding for top 3
         let rankColor = 'text-gray-400';
         if (rank === 1) rankColor = 'text-yellow-400 font-black text-2xl drop-shadow-md'; 
         else if (rank === 2) rankColor = 'text-gray-300 font-bold text-xl'; 
@@ -229,7 +153,6 @@ async function loadLeaderboard() {
         
         const item = document.createElement('div');
         item.className = `flex justify-between items-center p-3 rounded-xl border ${isMe ? 'bg-white/10 border-accentGold shadow-[0_0_10px_rgba(255,215,0,0.2)]' : 'bg-white/5 border-white/10'}`;
-        
         item.innerHTML = `
             <div class="flex items-center gap-4">
                 <div class="w-8 text-center ${rankColor}">#${rank}</div>
@@ -241,41 +164,33 @@ async function loadLeaderboard() {
     });
 }
 
-// Navigation
-els.navGame.addEventListener('click', () => switchTab('game'));
-els.navFriends.addEventListener('click', () => switchTab('friends'));
-els.navLeaderboard.addEventListener('click', () => {
-    switchTab('leaderboard');
-    loadLeaderboard(); // Fetch fresh data every time they click the tab
-});
-
 function switchTab(tab) {
-    // 1. Hide all views
     els.gameView.classList.add('hidden');
     els.friendsView.classList.add('hidden');
     els.leaderboardView.classList.add('hidden');
     
-    // 2. Reset all nav buttons to inactive
-    const navs = [els.navGame, els.navFriends, els.navLeaderboard];
-    navs.forEach(nav => {
+    [els.navGame, els.navFriends, els.navLeaderboard].forEach(nav => {
         nav.classList.remove('tab-active', 'text-accentGold');
         nav.classList.add('text-gray-400');
     });
 
-    // 3. Show active view and highlight button
     if (tab === 'game') {
         els.gameView.classList.remove('hidden');
         els.navGame.classList.add('tab-active', 'text-accentGold');
-        els.navGame.classList.remove('text-gray-400');
     } else if (tab === 'friends') {
         els.friendsView.classList.remove('hidden');
         els.navFriends.classList.add('tab-active', 'text-accentGold');
-        els.navFriends.classList.remove('text-gray-400');
     } else if (tab === 'leaderboard') {
         els.leaderboardView.classList.remove('hidden');
         els.navLeaderboard.classList.add('tab-active', 'text-accentGold');
-        els.navLeaderboard.classList.remove('text-gray-400');
     }
 }
+
+els.navGame.addEventListener('click', () => switchTab('game'));
+els.navFriends.addEventListener('click', () => switchTab('friends'));
+els.navLeaderboard.addEventListener('click', () => {
+    switchTab('leaderboard');
+    loadLeaderboard();
+});
 
 init();
