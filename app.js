@@ -7,7 +7,7 @@ tg.expand();
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
 const MONETAG_ZONE_ID = "12184150";
-const BOT_USERNAME = "@mycointapbot"; // e.g. MyCoolTapGame_bot
+const BOT_USERNAME = "mycointapbot"; // e.g. MyCoolTapGame_bot
 const EDGEONE_LIVE_URL = "https://cointapearner.edgeone.dev"; // Your live website link
 // ==========================================
 
@@ -98,16 +98,34 @@ async function init() {
     checkDailyStatus();
 }
 
+// --- SECURE SAVE PROGRESS VIA EDGE FUNCTION ---
 async function saveProgress() {
     if (!state.userId) return;
-    await db.from('users').upsert({ 
-        telegram_id: state.userId, 
-        balance: state.balance, 
-        energy: state.energy,
-        streak_count: state.streakCount,
-        last_checkin_date: state.lastCheckinDate,
-        wallet_address: state.wallet
-    }, { onConflict: 'telegram_id' });
+
+    try {
+        const response = await fetch(`${supabaseUrl}/functions/v1/verify-and-save`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${supabaseKey}`
+            },
+            body: JSON.stringify({
+                initData: tg.initData, // Cryptographic token verified securely on the server
+                balance: state.balance,
+                energy: state.energy,
+                streak_count: state.streakCount,
+                last_checkin_date: state.lastCheckinDate,
+                wallet_address: state.wallet
+            })
+        });
+
+        const result = await response.json();
+        if (!response.ok) {
+            console.error("Security sync failed:", result.error);
+        }
+    } catch (err) {
+        console.error("Network error during secure save:", err);
+    }
 }
 
 function updateUI() {
