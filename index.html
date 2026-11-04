@@ -9,7 +9,7 @@
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <!-- MONETAG SDK: Must be exactly as Monetag provided -->
+    <!-- MONETAG SDK -->
     <script src='//libtl.com/sdk.js' data-zone='12184150' data-sdk='show_12184150'></script>
     
     <style>
@@ -54,42 +54,39 @@
         </div>
     </main>
 
-    <!-- 2. EARN / TASKS VIEW (Ad Monetization Engine) -->
+    <!-- 2. EARN / TASKS VIEW -->
     <main id="earnView" class="flex-1 hidden flex-col p-5 overflow-y-auto">
-        <h2 class="text-3xl font-black mb-2 text-white">Earn More</h2>
-        <p class="text-gray-400 text-sm mb-6">Complete tasks to multiply your balance.</p>
+        <h2 class="text-3xl font-black mb-4 text-white">Earn More</h2>
         
+        <!-- Daily Check-in Card -->
+        <div class="bg-gradient-to-r from-blue-600 to-indigo-900 p-4 rounded-2xl mb-6 shadow-lg border border-blue-400/30 flex justify-between items-center relative overflow-hidden">
+            <div class="absolute -right-4 -top-4 text-6xl opacity-20">🎁</div>
+            <div class="z-10">
+                <h3 class="font-black text-xl">Daily Reward</h3>
+                <p class="text-blue-200 text-sm font-bold mt-1" id="streakText">Streak: 0 Days (Next: 500)</p>
+            </div>
+            <button id="dailyCheckinBtn" class="bg-white text-blue-900 font-black px-5 py-2 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.4)] active:scale-95 z-10">
+                Claim
+            </button>
+        </div>
+        
+        <p class="text-gray-400 text-sm mb-3">Tasks</p>
         <div class="flex flex-col gap-4">
-            <!-- Ad Task 1 -->
             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex justify-between items-center relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">HOT</div>
                 <div>
                     <h3 class="font-bold text-lg">Watch Video Ad</h3>
                     <p class="text-accentGold font-black text-sm">+5,000 Coins</p>
                 </div>
-                <button onclick="triggerAdTask(5000)" class="bg-accentGold text-black font-black px-4 py-2 rounded-xl shadow-lg active:scale-95 transition-transform">
-                    Watch
-                </button>
+                <button onclick="triggerAdTask(5000)" class="bg-accentGold text-black font-black px-4 py-2 rounded-xl shadow-lg active:scale-95">Watch</button>
             </div>
 
-            <!-- Ad Task 2 -->
             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex justify-between items-center">
                 <div>
                     <h3 class="font-bold text-lg">Refill Energy</h3>
                     <p class="text-accentNeon font-black text-sm">Full Bar + 1,000 Coins</p>
                 </div>
-                <button onclick="triggerAdTask(1000, true)" class="bg-white/10 border border-accentNeon text-accentNeon font-black px-4 py-2 rounded-xl active:scale-95 transition-transform">
-                    Refill
-                </button>
-            </div>
-            
-            <!-- Social Task placeholder -->
-            <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex justify-between items-center opacity-70">
-                <div>
-                    <h3 class="font-bold text-lg">Join Channel</h3>
-                    <p class="text-gray-400 font-bold text-sm">+2,000 Coins</p>
-                </div>
-                <button class="bg-gray-700 text-gray-300 font-bold px-4 py-2 rounded-xl">Soon</button>
+                <button onclick="triggerAdTask(1000, true)" class="bg-white/10 border border-accentNeon text-accentNeon font-black px-4 py-2 rounded-xl active:scale-95">Refill</button>
             </div>
         </div>
     </main>
@@ -103,7 +100,13 @@
         </button>
     </main>
 
-    <!-- 4. WALLET VIEW -->
+    <!-- 4. LEADERBOARD VIEW -->
+    <main id="leaderboardView" class="flex-1 hidden flex-col p-5 overflow-y-auto">
+        <h2 class="text-3xl font-black mb-6 text-white text-center">Top 50 Players</h2>
+        <div id="leaderboardList" class="flex flex-col gap-3 pb-20"></div>
+    </main>
+
+    <!-- 5. WALLET VIEW -->
     <main id="walletView" class="flex-1 hidden flex-col p-5 overflow-y-auto items-center">
         <h2 class="text-3xl font-black mb-8 text-white w-full text-left">Your Wallet</h2>
         
@@ -118,25 +121,27 @@
             <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
             Connect TON Wallet
         </button>
-        <p class="text-gray-500 text-xs text-center mt-3">Withdrawals unlock at 1,000,000 Coins</p>
     </main>
 
-    <!-- Bottom Navigation -->
-    <nav class="flex bg-gray-900/90 backdrop-blur-md border-t border-white/10 pb-safe pt-2 px-2 justify-around items-center h-20">
-        <button onclick="switchTab('game')" id="navGame" class="flex flex-col items-center gap-1 w-16 tab-active">
-            <span class="text-2xl">🕹️</span><span class="text-[10px] font-bold uppercase">Tap</span>
+    <!-- Bottom Navigation (5 Tabs) -->
+    <nav class="flex bg-gray-900/90 backdrop-blur-md border-t border-white/10 pb-safe pt-2 px-1 justify-around items-center h-20">
+        <button onclick="switchTab('game')" id="navGame" class="flex flex-col items-center gap-1 flex-1 tab-active">
+            <span class="text-2xl drop-shadow-md">🕹️</span><span class="text-[10px] font-bold uppercase">Tap</span>
         </button>
-        <button onclick="switchTab('earn')" id="navEarn" class="flex flex-col items-center gap-1 w-16 text-gray-500">
+        <button onclick="switchTab('earn')" id="navEarn" class="flex flex-col items-center gap-1 flex-1 text-gray-500">
             <span class="text-2xl">📋</span><span class="text-[10px] font-bold uppercase">Earn</span>
         </button>
-        <button onclick="switchTab('friends')" id="navFriends" class="flex flex-col items-center gap-1 w-16 text-gray-500">
+        <button onclick="switchTab('friends')" id="navFriends" class="flex flex-col items-center gap-1 flex-1 text-gray-500">
             <span class="text-2xl">👥</span><span class="text-[10px] font-bold uppercase">Friends</span>
         </button>
-        <button onclick="switchTab('wallet')" id="navWallet" class="flex flex-col items-center gap-1 w-16 text-gray-500">
+        <button onclick="switchTab('leaderboard')" id="navRank" class="flex flex-col items-center gap-1 flex-1 text-gray-500">
+            <span class="text-2xl">🏆</span><span class="text-[10px] font-bold uppercase">Rank</span>
+        </button>
+        <button onclick="switchTab('wallet')" id="navWallet" class="flex flex-col items-center gap-1 flex-1 text-gray-500">
             <span class="text-2xl">💳</span><span class="text-[10px] font-bold uppercase">Wallet</span>
         </button>
     </nav>
 
-    <script src="app.js?v=6"></script>
+    <script src="app.js?v=7"></script>
 </body>
 </html>
