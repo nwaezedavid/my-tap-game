@@ -4,15 +4,17 @@ tg.expand();
 // --- REPLACE THESE WITH YOUR ACTUAL CREDENTIALS ---
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const MONETAG_ZONE_ID = "12184150"; // Rewarded Interstitial Zone ID
+const MONETAG_ZONE_ID = "12184150"; 
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let state = { 
     balance: 0, 
     energy: 1000, 
     maxEnergy: 1000, 
-    userId: null, 
-    botUsername: '@mycointapbot' // Replace with your bot username without @
+    userId: null,
+    streakCount: 0,
+    lastCheckinDate: null,
+    botUsername: '@mycointapbot'
 };
 
 const els = {
@@ -25,73 +27,58 @@ const els = {
     energyText: document.getElementById('energyText'),
     energyBar: document.getElementById('energyBar'),
     inviteBtn: document.getElementById('inviteBtn'),
+    dailyCheckinBtn: document.getElementById('dailyCheckinBtn'),
+    streakText: document.getElementById('streakText'),
+    leaderboardList: document.getElementById('leaderboardList'),
     views: {
         game: document.getElementById('gameView'),
         earn: document.getElementById('earnView'),
         friends: document.getElementById('friendsView'),
+        leaderboard: document.getElementById('leaderboardView'),
         wallet: document.getElementById('walletView')
     },
     navs: {
         game: document.getElementById('navGame'),
         earn: document.getElementById('navEarn'),
         friends: document.getElementById('navFriends'),
+        leaderboard: document.getElementById('navRank'),
         wallet: document.getElementById('navWallet')
     }
 };
 
+const DAILY_BASE_REWARD = 500;
+
 async function init() {
     const user = tg.initDataUnsafe?.user;
-    const startParam = tg.initDataUnsafe?.start_param; // Catches referral code e.g. ref_123456
+    const startParam = tg.initDataUnsafe?.start_param; 
 
     if (user) {
         state.userId = user.id;
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        const { data, error } = await db
-            .from('users')
-            .select('*')
-            .eq('telegram_id', state.userId)
-            .maybeSingle();
-
-        if (error) {
-            tg.showAlert("DB Read Error: " + error.message);
-            updateUI();
-            return;
-        }
+        const { data } = await db.from('users').select('*').eq('telegram_id', state.userId).maybeSingle();
 
         if (data) {
-            // Returning player: load balance and energy
             state.balance = Number(data.balance) || 0;
             state.energy = Number(data.energy) || 1000;
+            state.streakCount = data.streak_count || 0;
+            state.lastCheckinDate = data.last_checkin_date || null;
         } else {
-            // Brand new player: register in database
-            const { error: insertError } = await db.from('users').upsert([{ 
+            await db.from('users').upsert([{ 
                 telegram_id: state.userId, 
                 username: user.username || user.first_name, 
                 balance: 0, 
-                energy: 1000 
+                energy: 1000,
+                streak_count: 0
             }], { onConflict: 'telegram_id' });
 
-            if (insertError) {
-                tg.showAlert("DB Create Error: " + insertError.message);
-            }
-
-            // Process referral link if joined via ref parameter
             if (startParam && startParam.startsWith('ref_')) {
                 const referrerId = parseInt(startParam.replace('ref_', ''));
-                
-                if (referrerId && !isNaN(referrerId)) {
-                    // Trigger Supabase RPC procedure for 10k reward & 2k welcome bonus
-                    const { error: rpcError } = await db.rpc('process_referral', {
-                        ref_id: referrerId,
-                        new_user_id: state.userId
-                    });
-
-                    if (!rpcError) {
-                        state.balance += 2000;
-                        tg.showAlert("🎉 Welcome! You received a 2,000 Coin Bonus for joining via invite link!");
-                    }
+                if (referrerId) {
+                    await db.rpc('process_referral', { ref_id: referrerId, new_user_id: state.userId });
+                    state.balance += 2000;
+                    tg.showAlert("🎉 Welcome! You received a 2,000 Coin Bonus for joining via invite link!");
                 }
             }
         }
@@ -99,21 +86,16 @@ async function init() {
         els.usernameDisplay.innerText = "Guest Player";
     }
     updateUI();
+    checkDailyStatus();
 }
 
 async function saveProgress() {
     if (!state.userId) return;
-    const { error } = await db
-        .from('users')
-        .upsert({ 
-            telegram_id: state.userId, 
-            balance: state.balance, 
-            energy: state.energy 
-        }, { onConflict: 'telegram_id' });
-
-    if (error) {
-        console.error("Auto-save failed:", error.message);
-    }
+    await db.from('users').upsert({ 
+        telegram_id: state.userId, 
+        balance: state.balance, 
+        energy: state.energy 
+    }, { onConflict: 'telegram_id' });
 }
 
 function updateUI() {
@@ -124,10 +106,75 @@ function updateUI() {
     
     els.energyText.innerText = `${state.energy} / ${state.maxEnergy}`;
     els.energyBar.style.width = `${(state.energy / state.maxEnergy) * 100}%`;
-
     els.tapButton.style.opacity = state.energy <= 0 ? '0.5' : '1';
 }
 
+// --- DAILY CHECK-IN SYSTEM ---
+function checkDailyStatus() {
+    const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    
+    if (state.lastCheckinDate === today) {
+        // Already claimed today
+        els.dailyCheckinBtn.innerText = "Claimed";
+        els.dailyCheckinBtn.classList.replace('bg-white', 'bg-gray-400');
+        els.dailyCheckinBtn.classList.replace('text-blue-900', 'text-white');
+        els.dailyCheckinBtn.disabled = true;
+        els.streakText.innerText = `Streak: ${state.streakCount} Days (Come back tomorrow)`;
+    } else {
+        // Ready to claim
+        let expectedReward = DAILY_BASE_REWARD;
+        if (state.lastCheckinDate) {
+            const lastDate = new Date(state.lastCheckinDate);
+            const currentDate = new Date(today);
+            const diffDays = Math.ceil(Math.abs(currentDate - lastDate) / (1000 * 60 * 60 * 24));
+            
+            if (diffDays === 1) {
+                expectedReward = DAILY_BASE_REWARD * (state.streakCount + 1);
+            }
+        }
+        
+        els.dailyCheckinBtn.innerText = "Claim";
+        els.dailyCheckinBtn.disabled = false;
+        els.streakText.innerText = `Streak: ${state.streakCount} Days (Next: +${expectedReward.toLocaleString()})`;
+    }
+}
+
+els.dailyCheckinBtn.addEventListener('click', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    
+    if (state.lastCheckinDate === today) return;
+
+    let newStreak = 1;
+    if (state.lastCheckinDate) {
+        const lastDate = new Date(state.lastCheckinDate);
+        const currentDate = new Date(today);
+        const diffDays = Math.ceil(Math.abs(currentDate - lastDate) / (1000 * 60 * 60 * 24));
+        
+        if (diffDays === 1) {
+            newStreak = state.streakCount + 1;
+        }
+    }
+
+    const reward = DAILY_BASE_REWARD * newStreak;
+    state.balance += reward;
+    state.streakCount = newStreak;
+    state.lastCheckinDate = today;
+    
+    updateUI();
+    checkDailyStatus();
+    
+    tg.HapticFeedback.notificationOccurred('success');
+    tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
+
+    // Save streak data immediately
+    await db.from('users').update({ 
+        balance: state.balance,
+        streak_count: state.streakCount,
+        last_checkin_date: state.lastCheckinDate
+    }).eq('telegram_id', state.userId);
+});
+
+// --- CORE GAME LOGIC ---
 let tapCount = 0;
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
@@ -136,7 +183,6 @@ els.tapButton.addEventListener('click', (e) => {
         state.energy -= 1;
         updateUI();
         
-        // Floating +1 animation on tap
         const floatEl = document.createElement('div');
         floatEl.innerText = '+1';
         floatEl.className = 'absolute text-accentGold font-black text-3xl pointer-events-none transition-all duration-500 ease-out z-50 drop-shadow-md';
@@ -144,25 +190,18 @@ els.tapButton.addEventListener('click', (e) => {
         floatEl.style.top = `${e.clientY - 25}px`;
         document.body.appendChild(floatEl);
         
-        requestAnimationFrame(() => { 
-            floatEl.style.transform = 'translateY(-60px)'; 
-            floatEl.style.opacity = '0'; 
-        });
+        requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-60px)'; floatEl.style.opacity = '0'; });
         setTimeout(() => floatEl.remove(), 500);
         
-        // Auto-save every 10 taps
         tapCount++;
-        if (tapCount >= 10) { 
-            saveProgress(); 
-            tapCount = 0; 
-        }
+        if (tapCount >= 10) { saveProgress(); tapCount = 0; }
     } else {
         tg.HapticFeedback.notificationOccurred('warning');
         tg.showAlert("Energy depleted! Go to the Earn tab to watch an ad and refill instantly.");
     }
 });
 
-// --- MONETAG AD REWARD ENGINE ---
+// --- MONETAG ADS & REFERRALS ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     
@@ -177,36 +216,59 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
                             
                             updateUI();
                             saveProgress();
-                            
                             tg.HapticFeedback.notificationOccurred('success');
                             tg.showAlert(`🎉 Ad completed! You earned ${rewardAmount.toLocaleString()} Coins!`);
                         } else {
-                            tg.showAlert("Ad was closed early. Watch the complete ad to claim your reward.");
+                            tg.showAlert("Ad closed early. Watch completely to claim reward.");
                         }
                     })
-                    .catch((err) => {
-                        console.error("Ad display error:", err);
-                        tg.showAlert("Ad network busy. Please try again shortly.");
-                    });
+                    .catch(() => tg.showAlert("Ad network busy. Please try again shortly."));
             }
         });
     } else {
-        tg.showAlert("Ad engine initializing. Please wait a few seconds and ensure your connection allows ads.");
+        tg.showAlert("Ad engine initializing. Please wait a few seconds.");
     }
 };
 
-// --- REFERRAL SHARE ACTION ---
 els.inviteBtn.addEventListener('click', () => {
-    if (!state.userId) {
-        tg.showAlert("Referral link unavailable in Guest mode.");
-        return;
-    }
+    if (!state.userId) return;
     const inviteLink = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
-    const shareText = "Join me in this Tap-to-Earn game! We both get coin bonuses!";
-    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent(shareText)}`);
+    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me in this Tap-to-Earn game!`);
 });
 
-// --- NAVIGATION LOGIC ---
+// --- LEADERBOARD FETCH ---
+async function loadLeaderboard() {
+    els.leaderboardList.innerHTML = '<div class="text-center text-gray-400 mt-10 animate-pulse font-bold">Loading Top 50...</div>';
+    const { data, error } = await db.from('users').select('username, balance, telegram_id').order('balance', { ascending: false }).limit(50);
+    
+    if (error) {
+        els.leaderboardList.innerHTML = '<div class="text-center text-red-500 mt-10">Failed to load ranks.</div>';
+        return;
+    }
+    
+    els.leaderboardList.innerHTML = '';
+    data.forEach((player, index) => {
+        const isMe = player.telegram_id === state.userId;
+        const rank = index + 1;
+        let rankColor = 'text-gray-400';
+        if (rank === 1) rankColor = 'text-yellow-400 font-black text-2xl drop-shadow-[0_0_10px_rgba(250,204,21,0.5)]'; 
+        else if (rank === 2) rankColor = 'text-gray-300 font-bold text-xl drop-shadow-md'; 
+        else if (rank === 3) rankColor = 'text-orange-400 font-bold text-xl drop-shadow-md'; 
+        
+        const item = document.createElement('div');
+        item.className = `flex justify-between items-center p-4 rounded-2xl border ${isMe ? 'bg-white/10 border-accentGold shadow-[0_0_15px_rgba(245,158,11,0.2)]' : 'bg-white/5 border-white/10'}`;
+        item.innerHTML = `
+            <div class="flex items-center gap-4">
+                <div class="w-8 text-center ${rankColor}">#${rank}</div>
+                <div class="font-bold ${isMe ? 'text-accentGold' : 'text-white'}">${player.username || 'Anonymous'}</div>
+            </div>
+            <div class="font-black text-accentNeon">${Number(player.balance).toLocaleString()}</div>
+        `;
+        els.leaderboardList.appendChild(item);
+    });
+}
+
+// --- NAVIGATION ---
 window.switchTab = function(tabName) {
     Object.keys(els.views).forEach(key => {
         els.views[key].classList.add('hidden');
@@ -217,6 +279,10 @@ window.switchTab = function(tabName) {
     els.views[tabName].classList.remove('hidden');
     els.navs[tabName].classList.add('tab-active', 'text-accentGold');
     els.navs[tabName].classList.remove('text-gray-500');
+
+    if (tabName === 'leaderboard') {
+        loadLeaderboard();
+    }
 };
 
 init();
