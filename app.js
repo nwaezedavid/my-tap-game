@@ -1,42 +1,36 @@
 const tg = window.Telegram.WebApp;
 tg.expand();
 
-// --- REPLACE THESE 3 LINES WITH YOUR ACTUAL KEYS ---
+// --- CREDENTIALS ---
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const MONETAG_ZONE_ID = "12184150";
-// ---------------------------------------------------
-
+const MONETAG_ZONE_ID = "12184150"; // Must be Rewarded Interstitial
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-let state = { 
-    balance: 0, 
-    energy: 1000, 
-    maxEnergy: 1000, 
-    referrals: 0, 
-    multiplier: 1, 
-    userId: null, 
-    botUsername: '@mycointapbot' 
-};
+let state = { balance: 0, energy: 1000, maxEnergy: 1000, userId: null, botUsername: '@mycointapbot' };
 
 const els = {
     usernameDisplay: document.getElementById('usernameDisplay'),
     avatar: document.getElementById('avatar'),
-    balance: document.getElementById('balance'),
+    headerBalance: document.getElementById('headerBalance'),
+    mainBalance: document.getElementById('mainBalance'),
+    walletBalance: document.getElementById('walletBalance'),
     tapButton: document.getElementById('tapButton'),
     energyText: document.getElementById('energyText'),
     energyBar: document.getElementById('energyBar'),
-    rechargeBtn: document.getElementById('rechargeBtn'),
     inviteBtn: document.getElementById('inviteBtn'),
-    gameView: document.getElementById('gameView'),
-    friendsView: document.getElementById('friendsView'),
-    leaderboardView: document.getElementById('leaderboardView'),
-    leaderboardList: document.getElementById('leaderboardList'),
-    navGame: document.getElementById('navGame'),
-    navFriends: document.getElementById('navFriends'),
-    navLeaderboard: document.getElementById('navLeaderboard'),
-    referralCount: document.getElementById('referralCount'),
-    referralBar: document.getElementById('referralBar')
+    views: {
+        game: document.getElementById('gameView'),
+        earn: document.getElementById('earnView'),
+        friends: document.getElementById('friendsView'),
+        wallet: document.getElementById('walletView')
+    },
+    navs: {
+        game: document.getElementById('navGame'),
+        earn: document.getElementById('navEarn'),
+        friends: document.getElementById('navFriends'),
+        wallet: document.getElementById('navWallet')
+    }
 };
 
 async function init() {
@@ -46,192 +40,112 @@ async function init() {
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        // 1. Ask Supabase for data using maybeSingle() (doesn't crash on empty rows)
-        const { data, error } = await db
-            .from('users')
-            .select('*')
-            .eq('telegram_id', state.userId)
-            .maybeSingle();
-
-        if (error) {
-            tg.showAlert("DB Read Error: " + error.message);
-            updateUI();
-            return;
-        }
-
+        const { data } = await db.from('users').select('*').eq('telegram_id', state.userId).maybeSingle();
         if (data) {
-            // Existing player found: load balance and energy
             state.balance = Number(data.balance) || 0;
             state.energy = Number(data.energy) || 1000;
         } else {
-            // New player: safely insert initial row using upsert
-            const { error: insertError } = await db.from('users').upsert([{
-                telegram_id: state.userId,
-                username: user.username || user.first_name,
-                balance: 0,
-                energy: 1000
-            }], { onConflict: 'telegram_id' });
-
-            if (insertError) {
-                tg.showAlert("DB Create Error: " + insertError.message);
-            }
+            await db.from('users').upsert([{ telegram_id: state.userId, username: user.username || user.first_name, balance: 0, energy: 1000 }], { onConflict: 'telegram_id' });
         }
     } else {
-        els.usernameDisplay.innerText = "Guest Player";
-        tg.showAlert("Debug Notice: Running in Guest mode (No Telegram User ID detected)");
+        els.usernameDisplay.innerText = "Guest";
     }
     updateUI();
 }
 
 async function saveProgress() {
     if (!state.userId) return;
-
-    // Use upsert so data saves even if row initialization was skipped
-    const { error } = await db
-        .from('users')
-        .upsert({ 
-            telegram_id: state.userId, 
-            balance: state.balance, 
-            energy: state.energy 
-        }, { onConflict: 'telegram_id' });
-
-    if (error) {
-        tg.showAlert("DB Save Error: " + error.message);
-    }
+    await db.from('users').upsert({ telegram_id: state.userId, balance: state.balance, energy: state.energy }, { onConflict: 'telegram_id' });
 }
 
 function updateUI() {
-    els.balance.innerText = state.balance.toLocaleString();
+    const formattedBal = state.balance.toLocaleString();
+    els.headerBalance.innerText = formattedBal;
+    els.mainBalance.innerText = formattedBal;
+    els.walletBalance.innerText = formattedBal;
+    
     els.energyText.innerText = `${state.energy} / ${state.maxEnergy}`;
     els.energyBar.style.width = `${(state.energy / state.maxEnergy) * 100}%`;
 
-    if (state.energy <= 0) {
-        els.tapButton.style.opacity = '0.5';
-        els.rechargeBtn.classList.remove('hidden');
-    } else {
-        els.tapButton.style.opacity = '1';
-        els.rechargeBtn.classList.add('hidden');
-    }
-}
-
-function createFloatingText(x, y, text) {
-    const floatEl = document.createElement('div');
-    floatEl.innerText = text;
-    floatEl.className = 'absolute text-accentGold font-bold text-2xl pointer-events-none transition-all duration-700 ease-out z-50';
-    floatEl.style.left = `${x - 10}px`;
-    floatEl.style.top = `${y - 20}px`;
-    document.body.appendChild(floatEl);
-
-    requestAnimationFrame(() => { 
-        floatEl.style.transform = 'translateY(-50px)'; 
-        floatEl.style.opacity = '0'; 
-    });
-    setTimeout(() => floatEl.remove(), 700);
+    els.tapButton.style.opacity = state.energy <= 0 ? '0.5' : '1';
 }
 
 let tapCount = 0;
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
         tg.HapticFeedback.impactOccurred('medium');
-        state.balance += (1 * state.multiplier);
+        state.balance += 1;
         state.energy -= 1;
         updateUI();
-        createFloatingText(e.clientX, e.clientY, `+${1 * state.multiplier}`);
+        
+        // Floating text animation
+        const floatEl = document.createElement('div');
+        floatEl.innerText = '+1';
+        floatEl.className = 'absolute text-accentGold font-black text-3xl pointer-events-none transition-all duration-500 ease-out z-50 drop-shadow-md';
+        floatEl.style.left = `${e.clientX - 15}px`;
+        floatEl.style.top = `${e.clientY - 25}px`;
+        document.body.appendChild(floatEl);
+        requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-60px)'; floatEl.style.opacity = '0'; });
+        setTimeout(() => floatEl.remove(), 500);
         
         tapCount++;
-        if (tapCount >= 10) {
-            saveProgress();
-            tapCount = 0;
-        }
+        if (tapCount >= 10) { saveProgress(); tapCount = 0; }
+    } else {
+        tg.HapticFeedback.notificationOccurred('warning');
+        tg.showAlert("Energy depleted! Go to the Earn tab to watch an ad and refill instantly.");
     }
 });
 
-els.rechargeBtn.addEventListener('click', () => {
+// --- MONETAG AD ENGINE ---
+window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
+    
     if (typeof window[sdkFuncName] === 'function') {
-        window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
-            .then((result) => {
-                if (result && result.reward_event_type === 'valued') {
-                    state.energy = state.maxEnergy;
-                    state.balance += 500;
-                    updateUI();
-                    saveProgress();
-                    tg.HapticFeedback.notificationOccurred('success');
-                    tg.showAlert("⚡ Energy fully restored + 500 bonus coins!");
-                } else {
-                    tg.showAlert("Ad closed early! Watch the complete ad to get rewarded.");
-                }
-            })
-            .catch(() => tg.showAlert("Ad currently unavailable."));
+        tg.showConfirm(`Watch a short ad to earn ${rewardAmount.toLocaleString()} Coins?`, (confirmed) => {
+            if (confirmed) {
+                window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
+                    .then((result) => {
+                        // The user actually finished the ad
+                        if (result && result.reward_event_type === 'valued') {
+                            state.balance += rewardAmount;
+                            if (refillEnergy) state.energy = state.maxEnergy;
+                            
+                            updateUI();
+                            saveProgress();
+                            
+                            tg.HapticFeedback.notificationOccurred('success');
+                            tg.showAlert(`🎉 Ad completed! You earned ${rewardAmount.toLocaleString()} Coins!`);
+                        } else {
+                            tg.showAlert("Ad was closed early. Watch the full ad to claim your reward.");
+                        }
+                    })
+                    .catch((err) => {
+                        console.error(err);
+                        tg.showAlert("Ad servers are busy. Please try again in 1 minute.");
+                    });
+            }
+        });
     } else {
-        tg.showAlert("Ad system is initializing. Please try again in a few seconds.");
+        tg.showAlert(`Ad engine is still loading. Give it a few seconds and make sure your internet connection isn't blocking ads.`);
     }
-});
+};
 
 els.inviteBtn.addEventListener('click', () => {
     if (!state.userId) return;
     const inviteLink = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
-    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me in this Tap-to-Earn game!`);
+    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Play and earn with me!`);
 });
 
-async function loadLeaderboard() {
-    els.leaderboardList.innerHTML = '<div class="text-center text-gray-400 mt-10 animate-pulse">Loading ranks...</div>';
-    const { data, error } = await db.from('users').select('username, balance, telegram_id').order('balance', { ascending: false }).limit(50);
-    
-    if (error) {
-        els.leaderboardList.innerHTML = '<div class="text-center text-red-500 mt-10">Failed to load leaderboard.</div>';
-        return;
-    }
-    
-    els.leaderboardList.innerHTML = '';
-    data.forEach((player, index) => {
-        const isMe = player.telegram_id === state.userId;
-        const rank = index + 1;
-        let rankColor = 'text-gray-400';
-        if (rank === 1) rankColor = 'text-yellow-400 font-black text-2xl drop-shadow-md'; 
-        else if (rank === 2) rankColor = 'text-gray-300 font-bold text-xl'; 
-        else if (rank === 3) rankColor = 'text-orange-400 font-bold text-xl'; 
-        
-        const item = document.createElement('div');
-        item.className = `flex justify-between items-center p-3 rounded-xl border ${isMe ? 'bg-white/10 border-accentGold shadow-[0_0_10px_rgba(255,215,0,0.2)]' : 'bg-white/5 border-white/10'}`;
-        item.innerHTML = `
-            <div class="flex items-center gap-4">
-                <div class="w-8 text-center ${rankColor}">#${rank}</div>
-                <div class="font-semibold ${isMe ? 'text-accentGold' : 'text-white'}">${player.username || 'Anonymous'}</div>
-            </div>
-            <div class="font-bold text-accentNeon">${player.balance.toLocaleString()}</div>
-        `;
-        els.leaderboardList.appendChild(item);
-    });
-}
-
-function switchTab(tab) {
-    els.gameView.classList.add('hidden');
-    els.friendsView.classList.add('hidden');
-    els.leaderboardView.classList.add('hidden');
-    
-    [els.navGame, els.navFriends, els.navLeaderboard].forEach(nav => {
-        nav.classList.remove('tab-active', 'text-accentGold');
-        nav.classList.add('text-gray-400');
+window.switchTab = function(tabName) {
+    Object.keys(els.views).forEach(key => {
+        els.views[key].classList.add('hidden');
+        els.navs[key].classList.remove('tab-active', 'text-accentGold');
+        els.navs[key].classList.add('text-gray-500');
     });
 
-    if (tab === 'game') {
-        els.gameView.classList.remove('hidden');
-        els.navGame.classList.add('tab-active', 'text-accentGold');
-    } else if (tab === 'friends') {
-        els.friendsView.classList.remove('hidden');
-        els.navFriends.classList.add('tab-active', 'text-accentGold');
-    } else if (tab === 'leaderboard') {
-        els.leaderboardView.classList.remove('hidden');
-        els.navLeaderboard.classList.add('tab-active', 'text-accentGold');
-    }
-}
-
-els.navGame.addEventListener('click', () => switchTab('game'));
-els.navFriends.addEventListener('click', () => switchTab('friends'));
-els.navLeaderboard.addEventListener('click', () => {
-    switchTab('leaderboard');
-    loadLeaderboard();
-});
+    els.views[tabName].classList.remove('hidden');
+    els.navs[tabName].classList.add('tab-active', 'text-accentGold');
+    els.navs[tabName].classList.remove('text-gray-500');
+};
 
 init();
