@@ -4,13 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Viral Tap & Earn</title>
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>tailwind.config = { theme: { extend: { colors: { bgMain: '#0F172A', accentGold: '#F59E0B', accentNeon: '#38BDF8' } } } }</script>
+    
+    <!-- Essential SDKs -->
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     
-    <!-- MONETAG SDK -->
+    <!-- MONETAG SDK (Replace YOUR_ZONE_ID with your actual Rewarded Interstitial Zone ID) -->
     <script src='//libtl.com/sdk.js' data-zone='12184150' data-sdk='show_12184150'></script>
+    
+    <!-- TON CONNECT SDK -->
+    <script src="https://unpkg.com/@tonconnect/ui@latest/dist/tonconnect-ui.min.js"></script>
     
     <style>
         body { -webkit-tap-highlight-color: transparent; user-select: none; }
@@ -63,14 +70,14 @@
             <div class="absolute -right-4 -top-4 text-6xl opacity-20">🎁</div>
             <div class="z-10">
                 <h3 class="font-black text-xl">Daily Reward</h3>
-                <p class="text-blue-200 text-sm font-bold mt-1" id="streakText">Streak: 0 Days (Next: 500)</p>
+                <p class="text-blue-200 text-sm font-bold mt-1" id="streakText">Streak: 0 Days</p>
             </div>
             <button id="dailyCheckinBtn" class="bg-white text-blue-900 font-black px-5 py-2 rounded-xl shadow-[0_0_15px_rgba(255,255,255,0.4)] active:scale-95 z-10">
                 Claim
             </button>
         </div>
         
-        <p class="text-gray-400 text-sm mb-3">Tasks</p>
+        <p class="text-gray-400 text-sm mb-3">Ad Tasks</p>
         <div class="flex flex-col gap-4">
             <div class="bg-white/5 p-4 rounded-2xl border border-white/10 flex justify-between items-center relative overflow-hidden">
                 <div class="absolute top-0 right-0 bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded-bl-lg">HOT</div>
@@ -117,10 +124,11 @@
             <p class="text-accentGold font-bold mt-2">≈ $0.00 USD</p>
         </div>
 
-        <button class="w-full py-4 rounded-2xl bg-[#0098EA] text-white font-black text-lg shadow-[0_0_15px_rgba(0,152,234,0.4)] flex items-center justify-center gap-2">
-            <svg class="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z"/></svg>
-            Connect TON Wallet
-        </button>
+        <!-- TON Connect Button -->
+        <div id="ton-connect-button" class="flex justify-center w-full mt-2 mb-4"></div>
+        <p id="walletAddressDisplay" class="text-accentNeon text-xs font-bold text-center break-all px-4 mb-4"></p>
+        
+        <p class="text-gray-500 text-xs text-center mt-3 border-t border-white/10 pt-4">Withdrawals unlock at 1,000,000 Coins</p>
     </main>
 
     <!-- Bottom Navigation (5 Tabs) -->
@@ -142,6 +150,6 @@
         </button>
     </nav>
 
-    <script src="app.js?v=7"></script>
+    <script src="app.js?v=9"></script>
 </body>
 </html>
