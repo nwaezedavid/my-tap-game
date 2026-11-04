@@ -6,7 +6,7 @@ tg.expand();
 // ==========================================
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const MONETAG_ZONE_ID = "12184150"; // Rewarded Interstitial Zone
+const MONETAG_ZONE_ID = "12184150"; 
 const BOT_USERNAME = "mycointapbot"; 
 const EDGEONE_LIVE_URL = "https://cointapearner.edgeone.dev"; 
 // ==========================================
@@ -55,7 +55,7 @@ const els = {
 };
 
 const DAILY_BASE_REWARD = 500;
-let sessionTapCount = 0; // Tracks taps for the 100-tap auto-ad
+let sessionTapCount = 0; 
 
 // --- INITIALIZATION ---
 async function init() {
@@ -125,14 +125,14 @@ async function saveProgress() {
     }
 }
 
-// --- UI AND EXCHANGE RATE CALCULATOR ---
+// --- UI & EXCHANGE RATE ---
 function updateUI() {
     const formattedBal = state.balance.toLocaleString();
     els.headerBalance.innerText = formattedBal;
     els.mainBalance.innerText = formattedBal;
     els.walletBalance.innerText = formattedBal;
     
-    // 1,000,000 coins = $0.001 USD. (Therefore 1 coin = $0.000000001)
+    // 1,000,000 coins = $0.001 USD
     const usdConversion = (state.balance * 0.000000001).toFixed(6);
     els.usdValue.innerText = `≈ $${usdConversion} USD`;
     
@@ -191,7 +191,7 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
     tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
 });
 
-// --- CORE GAME LOGIC & 100-TAP AUTO AD ---
+// --- CORE GAME LOGIC (TAP) ---
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
         tg.HapticFeedback.impactOccurred('medium');
@@ -201,7 +201,6 @@ els.tapButton.addEventListener('click', (e) => {
         
         updateUI();
         
-        // Floating Text Animation
         const floatEl = document.createElement('div');
         floatEl.innerText = '+1';
         floatEl.className = 'absolute text-accentGold font-black text-3xl pointer-events-none transition-all duration-500 ease-out z-50 drop-shadow-md';
@@ -212,44 +211,52 @@ els.tapButton.addEventListener('click', (e) => {
         requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-60px)'; floatEl.style.opacity = '0'; });
         setTimeout(() => floatEl.remove(), 500);
         
-        // Save to Database every 10 taps
         if (sessionTapCount % 10 === 0) { 
             saveProgress(); 
         }
 
-        // Force Auto-Ad every 100 taps
         if (sessionTapCount % 100 === 0) {
             forceAutoAd();
         }
-
     } else {
         tg.HapticFeedback.notificationOccurred('warning');
         tg.showAlert("Energy depleted! Go to the Earn tab to watch an ad and refill instantly.");
     }
 });
 
-// --- MONETAG ADS (Tasks & Auto) ---
+// --- MONETAG S2S SECURE AD ENGINE ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     
     if (typeof window[sdkFuncName] === 'function') {
         tg.showConfirm(`Watch a short ad to earn ${rewardAmount.toLocaleString()} Coins?`, (confirmed) => {
             if (confirmed) {
-                window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
-                    .then((result) => {
-                        if (result && result.reward_event_type === 'valued') {
-                            state.balance += rewardAmount;
-                            if (refillEnergy) state.energy = state.maxEnergy;
-                            
-                            updateUI();
-                            saveProgress();
-                            tg.HapticFeedback.notificationOccurred('success');
-                            tg.showAlert(`🎉 Ad completed! You earned ${rewardAmount.toLocaleString()} Coins!`);
-                        } else {
-                            tg.showAlert("Ad closed early. Watch completely to claim reward.");
-                        }
-                    })
-                    .catch(() => console.error("Ad network busy."));
+                // Pass reward data through requestVar so Monetag S2S Webhook knows what to give
+                const taskString = `${rewardAmount}_${refillEnergy}`;
+
+                window[sdkFuncName]({ 
+                    ymid: String(state.userId || 'guest'),
+                    requestVar: taskString
+                })
+                .then((result) => {
+                    if (result && result.reward_event_type === 'valued') {
+                        // Phone DOES NOT add coins manually! 
+                        // Wait 2 seconds for Monetag S2S Webhook to credit DB, then fetch fresh balance.
+                        setTimeout(async () => {
+                            const { data } = await db.from('users').select('balance, energy').eq('telegram_id', state.userId).maybeSingle();
+                            if (data) {
+                                state.balance = Number(data.balance);
+                                state.energy = Number(data.energy);
+                                updateUI();
+                                tg.HapticFeedback.notificationOccurred('success');
+                                tg.showAlert(`🎉 Server verified your view and awarded ${rewardAmount.toLocaleString()} Coins!`);
+                            }
+                        }, 2000);
+                    } else {
+                        tg.showAlert("Ad closed early. Watch completely to claim reward.");
+                    }
+                })
+                .catch(() => console.error("Ad network busy."));
             }
         });
     } else {
@@ -257,21 +264,27 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     }
 };
 
-// New function that triggers the ad without asking permission
 function forceAutoAd() {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     if (typeof window[sdkFuncName] === 'function') {
-        window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
-            .then((result) => {
-                // Give them a small surprise reward for being forced to watch
-                if (result && result.reward_event_type === 'valued') {
-                    state.balance += 250; 
-                    updateUI();
-                    saveProgress();
-                    tg.showAlert("🎁 Surprise! You earned a 250 Coin bonus for your playtime!");
-                }
-            })
-            .catch(() => console.log("Auto ad failed to load, continuing game..."));
+        window[sdkFuncName]({ 
+            ymid: String(state.userId || 'guest'),
+            requestVar: "250_false"
+        })
+        .then((result) => {
+            if (result && result.reward_event_type === 'valued') {
+                setTimeout(async () => {
+                    const { data } = await db.from('users').select('balance, energy').eq('telegram_id', state.userId).maybeSingle();
+                    if (data) {
+                        state.balance = Number(data.balance);
+                        state.energy = Number(data.energy);
+                        updateUI();
+                        tg.showAlert("🎁 Surprise! Server added a 250 Coin bonus for your playtime!");
+                    }
+                }, 2000);
+            }
+        })
+        .catch(() => console.log("Auto ad skipped/busy."));
     }
 }
 
