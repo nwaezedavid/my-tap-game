@@ -1,10 +1,16 @@
 const tg = window.Telegram.WebApp;
 tg.expand();
 
-// --- REPLACE THESE WITH YOUR ACTUAL CREDENTIALS ---
+// ==========================================
+// 🔴 REQUIRED CREDENTIALS - REPLACE THESE! 🔴
+// ==========================================
 const supabaseUrl = 'https://wjauprrwojmkusgyxjwm.supabase.co'; 
 const supabaseKey = 'sb_publishable_8mNxeymKzR80e6E9Jagx_w_muZbzI48';
-const MONETAG_ZONE_ID = "12184150"; 
+const MONETAG_ZONE_ID = "12184150";
+const BOT_USERNAME = "@mycointapbot"; // e.g. MyCoolTapGame_bot
+const EDGEONE_LIVE_URL = "https://cointapearner.edgeone.dev"; // Your live website link
+// ==========================================
+
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let state = { 
@@ -14,7 +20,7 @@ let state = {
     userId: null,
     streakCount: 0,
     lastCheckinDate: null,
-    botUsername: '@mycointapbot'
+    wallet: null
 };
 
 const els = {
@@ -23,6 +29,7 @@ const els = {
     headerBalance: document.getElementById('headerBalance'),
     mainBalance: document.getElementById('mainBalance'),
     walletBalance: document.getElementById('walletBalance'),
+    walletAddressDisplay: document.getElementById('walletAddressDisplay'),
     tapButton: document.getElementById('tapButton'),
     energyText: document.getElementById('energyText'),
     energyBar: document.getElementById('energyBar'),
@@ -48,6 +55,7 @@ const els = {
 
 const DAILY_BASE_REWARD = 500;
 
+// --- INITIALIZATION ---
 async function init() {
     const user = tg.initDataUnsafe?.user;
     const startParam = tg.initDataUnsafe?.start_param; 
@@ -64,6 +72,7 @@ async function init() {
             state.energy = Number(data.energy) || 1000;
             state.streakCount = data.streak_count || 0;
             state.lastCheckinDate = data.last_checkin_date || null;
+            state.wallet = data.wallet_address || null;
         } else {
             await db.from('users').upsert([{ 
                 telegram_id: state.userId, 
@@ -94,7 +103,10 @@ async function saveProgress() {
     await db.from('users').upsert({ 
         telegram_id: state.userId, 
         balance: state.balance, 
-        energy: state.energy 
+        energy: state.energy,
+        streak_count: state.streakCount,
+        last_checkin_date: state.lastCheckinDate,
+        wallet_address: state.wallet
     }, { onConflict: 'telegram_id' });
 }
 
@@ -111,26 +123,21 @@ function updateUI() {
 
 // --- DAILY CHECK-IN SYSTEM ---
 function checkDailyStatus() {
-    const today = new Date().toISOString().split('T')[0]; // Format: YYYY-MM-DD
+    const today = new Date().toISOString().split('T')[0];
     
     if (state.lastCheckinDate === today) {
-        // Already claimed today
         els.dailyCheckinBtn.innerText = "Claimed";
         els.dailyCheckinBtn.classList.replace('bg-white', 'bg-gray-400');
         els.dailyCheckinBtn.classList.replace('text-blue-900', 'text-white');
         els.dailyCheckinBtn.disabled = true;
         els.streakText.innerText = `Streak: ${state.streakCount} Days (Come back tomorrow)`;
     } else {
-        // Ready to claim
         let expectedReward = DAILY_BASE_REWARD;
         if (state.lastCheckinDate) {
             const lastDate = new Date(state.lastCheckinDate);
             const currentDate = new Date(today);
             const diffDays = Math.ceil(Math.abs(currentDate - lastDate) / (1000 * 60 * 60 * 24));
-            
-            if (diffDays === 1) {
-                expectedReward = DAILY_BASE_REWARD * (state.streakCount + 1);
-            }
+            if (diffDays === 1) expectedReward = DAILY_BASE_REWARD * (state.streakCount + 1);
         }
         
         els.dailyCheckinBtn.innerText = "Claim";
@@ -141,7 +148,6 @@ function checkDailyStatus() {
 
 els.dailyCheckinBtn.addEventListener('click', async () => {
     const today = new Date().toISOString().split('T')[0];
-    
     if (state.lastCheckinDate === today) return;
 
     let newStreak = 1;
@@ -149,10 +155,7 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
         const lastDate = new Date(state.lastCheckinDate);
         const currentDate = new Date(today);
         const diffDays = Math.ceil(Math.abs(currentDate - lastDate) / (1000 * 60 * 60 * 24));
-        
-        if (diffDays === 1) {
-            newStreak = state.streakCount + 1;
-        }
+        if (diffDays === 1) newStreak = state.streakCount + 1;
     }
 
     const reward = DAILY_BASE_REWARD * newStreak;
@@ -162,19 +165,13 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
     
     updateUI();
     checkDailyStatus();
+    saveProgress();
     
     tg.HapticFeedback.notificationOccurred('success');
     tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
-
-    // Save streak data immediately
-    await db.from('users').update({ 
-        balance: state.balance,
-        streak_count: state.streakCount,
-        last_checkin_date: state.lastCheckinDate
-    }).eq('telegram_id', state.userId);
 });
 
-// --- CORE GAME LOGIC ---
+// --- CORE GAME LOGIC (TAP) ---
 let tapCount = 0;
 els.tapButton.addEventListener('click', (e) => {
     if (state.energy > 0) {
@@ -201,7 +198,7 @@ els.tapButton.addEventListener('click', (e) => {
     }
 });
 
-// --- MONETAG ADS & REFERRALS ---
+// --- MONETAG ADS ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     
@@ -230,13 +227,14 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
     }
 };
 
+// --- REFERRALS ---
 els.inviteBtn.addEventListener('click', () => {
     if (!state.userId) return;
-    const inviteLink = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
+    const inviteLink = `https://t.me/${BOT_USERNAME}?start=ref_${state.userId}`;
     tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me in this Tap-to-Earn game!`);
 });
 
-// --- LEADERBOARD FETCH ---
+// --- LEADERBOARD ---
 async function loadLeaderboard() {
     els.leaderboardList.innerHTML = '<div class="text-center text-gray-400 mt-10 animate-pulse font-bold">Loading Top 50...</div>';
     const { data, error } = await db.from('users').select('username, balance, telegram_id').order('balance', { ascending: false }).limit(50);
@@ -280,9 +278,27 @@ window.switchTab = function(tabName) {
     els.navs[tabName].classList.add('tab-active', 'text-accentGold');
     els.navs[tabName].classList.remove('text-gray-500');
 
-    if (tabName === 'leaderboard') {
-        loadLeaderboard();
-    }
+    if (tabName === 'leaderboard') loadLeaderboard();
 };
 
+// --- TON WALLET CONNECT ---
+const tonConnectUI = new TON_CONNECT_UI.TonConnectUI({
+    manifestUrl: `${EDGEONE_LIVE_URL}/tonconnect-manifest.json`,
+    buttonRootId: 'ton-connect-button'
+});
+
+tonConnectUI.onStatusChange(async (walletInfo) => {
+    if (walletInfo) {
+        const rawAddress = walletInfo.account.address;
+        state.wallet = rawAddress;
+        els.walletAddressDisplay.innerText = "Wallet: " + rawAddress.substring(0, 8) + "..." + rawAddress.slice(-4);
+        await saveProgress();
+    } else {
+        state.wallet = null;
+        els.walletAddressDisplay.innerText = "";
+        await saveProgress();
+    }
+});
+
+// Start App
 init();
