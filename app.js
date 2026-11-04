@@ -9,7 +9,15 @@ const MONETAG_ZONE_ID = "12184150";
 
 const db = window.supabase.createClient(supabaseUrl, supabaseKey);
 
-let state = { balance: 0, energy: 1000, maxEnergy: 1000, referrals: 0, multiplier: 1, userId: null, botUsername: '@mycointapbot' };
+let state = { 
+    balance: 0, 
+    energy: 1000, 
+    maxEnergy: 1000, 
+    referrals: 0, 
+    multiplier: 1, 
+    userId: null, 
+    botUsername: '@mycointapbot' 
+};
 
 const els = {
     usernameDisplay: document.getElementById('usernameDisplay'),
@@ -38,28 +46,58 @@ async function init() {
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        const { data } = await db.from('users').select('*').eq('telegram_id', state.userId).single();
+        // 1. Ask Supabase for data using maybeSingle() (doesn't crash on empty rows)
+        const { data, error } = await db
+            .from('users')
+            .select('*')
+            .eq('telegram_id', state.userId)
+            .maybeSingle();
+
+        if (error) {
+            tg.showAlert("DB Read Error: " + error.message);
+            updateUI();
+            return;
+        }
 
         if (data) {
-            state.balance = data.balance;
-            state.energy = data.energy;
+            // Existing player found: load balance and energy
+            state.balance = Number(data.balance) || 0;
+            state.energy = Number(data.energy) || 1000;
         } else {
-            await db.from('users').insert([{
+            // New player: safely insert initial row using upsert
+            const { error: insertError } = await db.from('users').upsert([{
                 telegram_id: state.userId,
                 username: user.username || user.first_name,
                 balance: 0,
                 energy: 1000
-            }]);
+            }], { onConflict: 'telegram_id' });
+
+            if (insertError) {
+                tg.showAlert("DB Create Error: " + insertError.message);
+            }
         }
     } else {
         els.usernameDisplay.innerText = "Guest Player";
+        tg.showAlert("Debug Notice: Running in Guest mode (No Telegram User ID detected)");
     }
     updateUI();
 }
 
 async function saveProgress() {
     if (!state.userId) return;
-    await db.from('users').update({ balance: state.balance, energy: state.energy }).eq('telegram_id', state.userId);
+
+    // Use upsert so data saves even if row initialization was skipped
+    const { error } = await db
+        .from('users')
+        .upsert({ 
+            telegram_id: state.userId, 
+            balance: state.balance, 
+            energy: state.energy 
+        }, { onConflict: 'telegram_id' });
+
+    if (error) {
+        tg.showAlert("DB Save Error: " + error.message);
+    }
 }
 
 function updateUI() {
@@ -84,7 +122,10 @@ function createFloatingText(x, y, text) {
     floatEl.style.top = `${y - 20}px`;
     document.body.appendChild(floatEl);
 
-    requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-50px)'; floatEl.style.opacity = '0'; });
+    requestAnimationFrame(() => { 
+        floatEl.style.transform = 'translateY(-50px)'; 
+        floatEl.style.opacity = '0'; 
+    });
     setTimeout(() => floatEl.remove(), 700);
 }
 
@@ -130,7 +171,7 @@ els.rechargeBtn.addEventListener('click', () => {
 els.inviteBtn.addEventListener('click', () => {
     if (!state.userId) return;
     const inviteLink = `https://t.me/${state.botUsername}?start=ref_${state.userId}`;
-    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me!`);
+    tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=Join me in this Tap-to-Earn game!`);
 });
 
 async function loadLeaderboard() {
