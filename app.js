@@ -375,4 +375,49 @@ tonConnectUI.onStatusChange(async (walletInfo) => {
     }
 });
 
+// --- WITHDRAWAL LOGIC ---
+document.getElementById('withdrawBtn').addEventListener('click', async () => {
+    if (!isDataLoaded) return;
+    
+    if (!state.wallet) {
+        tg.HapticFeedback.notificationOccurred('error');
+        tg.showAlert("⚠️ Please connect your TON Wallet first!");
+        return;
+    }
+
+    if (state.balance < 5000000000) {
+        tg.HapticFeedback.notificationOccurred('warning');
+        tg.showAlert("❌ Insufficient Balance! You need 5,000,000,000 Coins to withdraw $5.00.");
+        return;
+    }
+
+    tg.showConfirm("Are you sure you want to withdraw $5.00 to your connected TON wallet?", async (confirmed) => {
+        if (confirmed) {
+            // 1. Immediately deduct the balance so they can't spam the button
+            state.balance -= 5000000000;
+            updateUI();
+            
+            // 2. Send the request to your new admin table
+            const { error } = await db.from('withdrawals').insert([{
+                telegram_id: state.userId,
+                username: String(state.userId), // Store ID as username fallback
+                wallet_address: state.wallet,
+                amount: 5000000000
+            }]);
+
+            if (error) {
+                // If the database fails, refund their coins
+                state.balance += 5000000000;
+                updateUI();
+                tg.showAlert("Network error. Please try again.");
+            } else {
+                // Success! Save the deducted balance to their main profile
+                saveProgress();
+                tg.HapticFeedback.notificationOccurred('success');
+                tg.showAlert("✅ Success! Your $5 withdrawal request is pending. It will be sent to your wallet within 24 hours.");
+            }
+        }
+    });
+});
+
 init();
