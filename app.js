@@ -59,7 +59,7 @@ const els = {
 const DAILY_BASE_REWARD = 500;
 let sessionTapCount = 0; 
 
-// --- INITIALIZATION ---
+// --- INITIALIZATION (OVERWRITE-PROOF) ---
 async function init() {
     const user = tg.initDataUnsafe?.user;
     const startParam = tg.initDataUnsafe?.start_param; 
@@ -69,9 +69,11 @@ async function init() {
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        const { data } = await db.from('users').select('*').eq('telegram_id', state.userId).maybeSingle();
+        // 1. Try to read the existing player data
+        const { data, error: readError } = await db.from('users').select('*').eq('telegram_id', state.userId).maybeSingle();
 
         if (data) {
+            // Player exists! Load their exact stats.
             state.balance = Number(data.balance) || 0;
             state.energy = Number(data.energy) || 1000;
             state.streakCount = data.streak_count || 0;
@@ -79,15 +81,16 @@ async function init() {
             state.wallet = data.wallet_address || null;
             lastSavedBalance = state.balance;
         } else {
-            await db.from('users').upsert([{ 
+            // Player does NOT exist. Safely INSERT a new row.
+            const { error: insertError } = await db.from('users').insert([{ 
                 telegram_id: state.userId, 
                 username: user.username || user.first_name, 
                 balance: 0, 
                 energy: 1000,
                 streak_count: 0
-            }], { onConflict: 'telegram_id' });
+            }]);
 
-            if (startParam && startParam.startsWith('ref_')) {
+            if (startParam && startParam.startsWith('ref_') && !insertError) {
                 const referrerId = parseInt(startParam.replace('ref_', ''));
                 if (referrerId) {
                     await db.rpc('process_referral', { ref_id: referrerId, new_user_id: state.userId });
@@ -110,7 +113,6 @@ async function saveProgress() {
     const user = tg.initDataUnsafe?.user;
     const playerName = user ? (user.username || user.first_name) : 'Player';
 
-    // Notice the brackets [ ] around the data. This forces Supabase to accept the row properly!
     const { error } = await db.from('users').upsert([{
         telegram_id: state.userId,
         username: playerName,
@@ -130,7 +132,6 @@ async function saveProgress() {
 }
 
 // --- BACKGROUND AUTO-SAVE ---
-// This checks your balance every 5 seconds. If it changed, it saves quietly in the background!
 setInterval(() => {
     if (state.balance !== lastSavedBalance && state.userId) {
         saveProgress();
