@@ -23,6 +23,8 @@ let state = {
     wallet: null
 };
 
+let lastSavedBalance = -1; // Helps the background sync know when to save
+
 const els = {
     usernameDisplay: document.getElementById('usernameDisplay'),
     avatar: document.getElementById('avatar'),
@@ -75,6 +77,7 @@ async function init() {
             state.streakCount = data.streak_count || 0;
             state.lastCheckinDate = data.last_checkin_date || null;
             state.wallet = data.wallet_address || null;
+            lastSavedBalance = state.balance;
         } else {
             await db.from('users').upsert([{ 
                 telegram_id: state.userId, 
@@ -100,25 +103,39 @@ async function init() {
     checkDailyStatus();
 }
 
-// --- DIRECT DATABASE SAVING (UPDATED) ---
+// --- DIRECT DATABASE SAVING ---
 async function saveProgress() {
     if (!state.userId) return;
     
-    // We use .update() instead of .upsert() here to prevent it from accidentally wiping other columns
-    const { error } = await db.from('users').update({
+    const user = tg.initDataUnsafe?.user;
+    const playerName = user ? (user.username || user.first_name) : 'Player';
+
+    // Notice the brackets [ ] around the data. This forces Supabase to accept the row properly!
+    const { error } = await db.from('users').upsert([{
+        telegram_id: state.userId,
+        username: playerName,
         balance: state.balance,
         energy: state.energy,
         streak_count: state.streakCount,
         last_checkin_date: state.lastCheckinDate,
         wallet_address: state.wallet
-    }).eq('telegram_id', state.userId);
+    }], { onConflict: 'telegram_id' });
 
     if (error) {
         console.error("Save failed:", error.message);
-        // This popup will tell us exactly what is broken!
         tg.showAlert("Database Error: " + error.message); 
+    } else {
+        lastSavedBalance = state.balance;
     }
 }
+
+// --- BACKGROUND AUTO-SAVE ---
+// This checks your balance every 5 seconds. If it changed, it saves quietly in the background!
+setInterval(() => {
+    if (state.balance !== lastSavedBalance && state.userId) {
+        saveProgress();
+    }
+}, 5000);
 
 // --- UI & EXCHANGE RATE ---
 function updateUI() {
@@ -179,7 +196,7 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
     
     updateUI();
     checkDailyStatus();
-    saveProgress(); // Saves immediately
+    saveProgress(); 
     
     tg.HapticFeedback.notificationOccurred('success');
     tg.showAlert(`🎉 Day ${newStreak} Streak! You claimed ${reward.toLocaleString()} Coins!`);
@@ -204,10 +221,6 @@ els.tapButton.addEventListener('click', (e) => {
         
         requestAnimationFrame(() => { floatEl.style.transform = 'translateY(-60px)'; floatEl.style.opacity = '0'; });
         setTimeout(() => floatEl.remove(), 500);
-        
-        if (sessionTapCount % 10 === 0) { 
-            saveProgress(); 
-        }
 
         if (sessionTapCount % 100 === 0) {
             forceAutoAd();
@@ -227,12 +240,11 @@ window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
                 window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
                 .then((result) => {
                     if (result && result.reward_event_type === 'valued') {
-                        // Instantly grant coins on screen
                         state.balance += rewardAmount;
                         if (refillEnergy) state.energy = state.maxEnergy;
                         
                         updateUI();
-                        saveProgress(); // Immediately save to database
+                        saveProgress(); 
                         tg.HapticFeedback.notificationOccurred('success');
                         tg.showAlert(`🎉 Ad completed! You earned ${rewardAmount.toLocaleString()} Coins!`);
                     } else {
@@ -253,7 +265,6 @@ function forceAutoAd() {
         window[sdkFuncName]({ ymid: String(state.userId || 'guest') })
         .then((result) => {
             if (result && result.reward_event_type === 'valued') {
-                // Instantly grant surprise coins
                 state.balance += 250;
                 updateUI();
                 saveProgress();
