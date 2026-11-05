@@ -100,20 +100,23 @@ async function init() {
     checkDailyStatus();
 }
 
-// --- DIRECT DATABASE SAVING ---
+// --- DIRECT DATABASE SAVING (UPDATED) ---
 async function saveProgress() {
     if (!state.userId) return;
-    const { error } = await db.from('users').upsert({
-        telegram_id: state.userId,
+    
+    // We use .update() instead of .upsert() here to prevent it from accidentally wiping other columns
+    const { error } = await db.from('users').update({
         balance: state.balance,
         energy: state.energy,
         streak_count: state.streakCount,
         last_checkin_date: state.lastCheckinDate,
         wallet_address: state.wallet
-    }, { onConflict: 'telegram_id' });
+    }).eq('telegram_id', state.userId);
 
     if (error) {
         console.error("Save failed:", error.message);
+        // This popup will tell us exactly what is broken!
+        tg.showAlert("Database Error: " + error.message); 
     }
 }
 
