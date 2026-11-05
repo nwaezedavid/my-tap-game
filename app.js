@@ -23,7 +23,8 @@ let state = {
     wallet: null
 };
 
-let lastSavedBalance = -1; // Helps the background sync know when to save
+let lastSavedBalance = -1;
+let isDataLoaded = false; // THE VAULT LOCK
 
 const els = {
     usernameDisplay: document.getElementById('usernameDisplay'),
@@ -59,7 +60,7 @@ const els = {
 const DAILY_BASE_REWARD = 500;
 let sessionTapCount = 0; 
 
-// --- INITIALIZATION (OVERWRITE-PROOF) ---
+// --- INITIALIZATION ---
 async function init() {
     const user = tg.initDataUnsafe?.user;
     const startParam = tg.initDataUnsafe?.start_param; 
@@ -69,19 +70,25 @@ async function init() {
         els.usernameDisplay.innerText = user.username || user.first_name;
         els.avatar.innerText = (user.first_name || user.username).charAt(0).toUpperCase();
 
-        // 1. Try to read the existing player data
         const { data, error: readError } = await db.from('users').select('*').eq('telegram_id', state.userId).maybeSingle();
 
+        // 1. If the network glitches, freeze the app. Do NOT let it save a 0.
+        if (readError) {
+            tg.showAlert("Network timeout loading your profile. Please close and reopen the app.");
+            return; 
+        }
+
         if (data) {
-            // Player exists! Load their exact stats.
             state.balance = Number(data.balance) || 0;
             state.energy = Number(data.energy) || 1000;
             state.streakCount = data.streak_count || 0;
             state.lastCheckinDate = data.last_checkin_date || null;
             state.wallet = data.wallet_address || null;
             lastSavedBalance = state.balance;
+            
+            isDataLoaded = true; // Unlock the vault
         } else {
-            // Player does NOT exist. Safely INSERT a new row.
+            // 2. Only insert if we are 100% sure the profile does not exist
             const { error: insertError } = await db.from('users').insert([{ 
                 telegram_id: state.userId, 
                 username: user.username || user.first_name, 
@@ -90,7 +97,12 @@ async function init() {
                 streak_count: 0
             }]);
 
-            if (startParam && startParam.startsWith('ref_') && !insertError) {
+            if (insertError) {
+                tg.showAlert("Failed to create profile. Close and reopen.");
+                return;
+            }
+
+            if (startParam && startParam.startsWith('ref_')) {
                 const referrerId = parseInt(startParam.replace('ref_', ''));
                 if (referrerId) {
                     await db.rpc('process_referral', { ref_id: referrerId, new_user_id: state.userId });
@@ -98,6 +110,9 @@ async function init() {
                     tg.showAlert("🎉 Welcome! You received a 2,000 Coin Bonus for joining via invite link!");
                 }
             }
+            
+            lastSavedBalance = state.balance;
+            isDataLoaded = true; // Unlock the vault
         }
     } else {
         els.usernameDisplay.innerText = "Guest Player";
@@ -108,7 +123,8 @@ async function init() {
 
 // --- DIRECT DATABASE SAVING ---
 async function saveProgress() {
-    if (!state.userId) return;
+    // BLOCKS saves if the data hasn't fully loaded
+    if (!state.userId || !isDataLoaded) return; 
     
     const user = tg.initDataUnsafe?.user;
     const playerName = user ? (user.username || user.first_name) : 'Player';
@@ -125,7 +141,6 @@ async function saveProgress() {
 
     if (error) {
         console.error("Save failed:", error.message);
-        tg.showAlert("Database Error: " + error.message); 
     } else {
         lastSavedBalance = state.balance;
     }
@@ -133,7 +148,7 @@ async function saveProgress() {
 
 // --- BACKGROUND AUTO-SAVE ---
 setInterval(() => {
-    if (state.balance !== lastSavedBalance && state.userId) {
+    if (isDataLoaded && state.balance !== lastSavedBalance && state.userId) {
         saveProgress();
     }
 }, 5000);
@@ -150,7 +165,7 @@ function updateUI() {
     
     els.energyText.innerText = `${state.energy} / ${state.maxEnergy}`;
     els.energyBar.style.width = `${(state.energy / state.maxEnergy) * 100}%`;
-    els.tapButton.style.opacity = state.energy <= 0 ? '0.5' : '1';
+    els.tapButton.style.opacity = (!isDataLoaded || state.energy <= 0) ? '0.5' : '1';
 }
 
 // --- DAILY CHECK-IN SYSTEM ---
@@ -179,6 +194,8 @@ function checkDailyStatus() {
 }
 
 els.dailyCheckinBtn.addEventListener('click', async () => {
+    if (!isDataLoaded) return;
+    
     const today = new Date().toISOString().split('T')[0];
     if (state.lastCheckinDate === today) return;
 
@@ -205,6 +222,13 @@ els.dailyCheckinBtn.addEventListener('click', async () => {
 
 // --- CORE GAME LOGIC (TAP) ---
 els.tapButton.addEventListener('click', (e) => {
+    // Block tapping if data hasn't loaded yet
+    if (!isDataLoaded) {
+        tg.HapticFeedback.notificationOccurred('warning');
+        tg.showAlert("Loading your secure profile... please wait a second!");
+        return;
+    }
+    
     if (state.energy > 0) {
         tg.HapticFeedback.impactOccurred('medium');
         state.balance += 1;
@@ -234,6 +258,8 @@ els.tapButton.addEventListener('click', (e) => {
 
 // --- INSTANT AD REWARD ENGINE ---
 window.triggerAdTask = function(rewardAmount, refillEnergy = false) {
+    if (!isDataLoaded) return;
+    
     const sdkFuncName = `show_${MONETAG_ZONE_ID}`;
     if (typeof window[sdkFuncName] === 'function') {
         tg.showConfirm(`Watch an ad to earn ${rewardAmount.toLocaleString()} Coins?`, (confirmed) => {
@@ -341,11 +367,11 @@ tonConnectUI.onStatusChange(async (walletInfo) => {
         const rawAddress = walletInfo.account.address;
         state.wallet = rawAddress;
         els.walletAddressDisplay.innerText = "Wallet: " + rawAddress.substring(0, 8) + "..." + rawAddress.slice(-4);
-        await saveProgress();
+        if (isDataLoaded) await saveProgress();
     } else {
         state.wallet = null;
         els.walletAddressDisplay.innerText = "";
-        await saveProgress();
+        if (isDataLoaded) await saveProgress();
     }
 });
 
